@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import Topbar from '../components/Topbar'
 import styles from './SudokuKiller.module.css'
+import { minSum, maxSum, pairKey, computeCombinations } from '../lib/sudoku-killer'
 
 type DigitState = 'neutral' | 'required' | 'excluded'
 type PairState = 'required' | 'excluded'
@@ -23,46 +24,6 @@ const INITIAL_DIGIT_STATES: Record<number, DigitState> = {
   6: 'neutral', 7: 'neutral', 8: 'neutral', 9: 'neutral',
 }
 
-function minSum(n: number) {
-  return (n * (n + 1)) / 2
-}
-
-function maxSum(n: number) {
-  let t = 0
-  for (let i = 9; i > 9 - n; i--) t += i
-  return t
-}
-
-function pairKey(a: number, b: number) {
-  return a < b ? `${a}-${b}` : `${b}-${a}`
-}
-
-function computeCombinations(
-  target: number,
-  cells: number,
-  excluded: Set<number>,
-  required: Set<number>,
-): number[][] {
-  const out: number[][] = []
-  const cur: number[] = []
-
-  function walk(start: number, remaining: number) {
-    if (cur.length === cells) {
-      if (remaining === 0) out.push([...cur])
-      return
-    }
-    for (let d = start; d <= 9; d++) {
-      if (excluded.has(d)) continue
-      if (d > remaining) break
-      cur.push(d)
-      walk(d + 1, remaining - d)
-      cur.pop()
-    }
-  }
-
-  walk(1, target)
-  return out.filter(combo => [...required].every(d => combo.includes(d)))
-}
 
 export default function SudokuKiller() {
   const [size, setSize] = useState<number | null>(null)

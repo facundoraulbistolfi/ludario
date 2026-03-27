@@ -15,6 +15,7 @@ Herramientas web para juegos de mesa, cartas y puzzles. Deployado en GitHub Page
 | Bundler | Vite 5 |
 | Routing | React Router 6 — HashRouter |
 | Estilos | CSS global + CSS Modules por tool |
+| Testing | Vitest |
 | Deploy | GitHub Actions → GitHub Pages |
 
 ---
@@ -22,10 +23,12 @@ Herramientas web para juegos de mesa, cartas y puzzles. Deployado en GitHub Page
 ## Comandos
 
 ```bash
-npm install      # instalar dependencias
-npm run dev      # servidor de desarrollo en localhost
-npm run build    # compilar TypeScript + build de producción en dist/
-npm run preview  # previsualizar el build local
+npm install        # instalar dependencias
+npm run dev        # servidor de desarrollo en localhost
+npm run build      # type check + build de producción en dist/
+npm run preview    # previsualizar el build local
+npm test           # correr tests una vez (modo CI)
+npm run test:watch # correr tests en modo watch (desarrollo)
 ```
 
 ---
@@ -44,6 +47,9 @@ tabletop-helper/
 │   │   └── site.css          # estilos globales: topbar, cards, hero, layout
 │   ├── components/
 │   │   └── Topbar.tsx        # nav compartida, filtra el link de la página actual
+│   ├── lib/
+│   │   ├── sudoku-killer.ts       # lógica pura del solver (testeable)
+│   │   └── sudoku-killer.test.ts  # tests de la lógica del solver
 │   └── pages/
 │       ├── Home.tsx                    # landing con cards de las tools
 │       ├── SudokuKiller.tsx            # solver de cages para Killer Sudoku
@@ -57,7 +63,8 @@ tabletop-helper/
 ├── tsconfig.node.json        # config TS para vite.config.ts
 └── .github/
     └── workflows/
-        └── deploy.yml        # CI/CD: build → upload dist/ → GitHub Pages
+        ├── ci.yml        # PR check: tests + build (se dispara en PRs y pushes a ramas)
+        └── deploy.yml    # deploy: build → upload dist/ → GitHub Pages (solo en main)
 ```
 
 ---
@@ -88,9 +95,17 @@ HashRouter no requiere configuración de servidor, funciona en GitHub Pages sin 
 
 - **Un archivo por page** en `src/pages/`. Si la page crece, crear subcarpeta `src/pages/sudoku-killer/` con `index.tsx` + componentes internos.
 - **Componentes compartidos** en `src/components/`.
+- **Lógica pura en `src/lib/`** — funciones sin dependencias de React, fáciles de testear unitariamente.
 - **Sin lógica de negocio en el CSS** — toda la lógica en TSX, los estilos sólo presentación.
 - **Estado local** con `useState`/`useMemo`. Si el estado necesita compartirse entre pages, agregar un contexto o Zustand.
 - **TypeScript strict**: `noUnusedLocals` y `noUnusedParameters` activos. El build falla si hay variables sin usar.
+
+## Tests
+
+- Framework: **Vitest** (integrado con Vite, sin config extra).
+- Los tests viven junto al código que testean: `src/lib/foo.ts` → `src/lib/foo.test.ts`.
+- Se priorizan tests de **lógica pura** en `src/lib/`. Los componentes React se pueden testear con `@testing-library/react` si se agrega en el futuro.
+- El CI corre `npm test` antes del build. Si los tests fallan, el build no se ejecuta.
 
 ---
 
@@ -128,6 +143,7 @@ La URL base de Vite está configurada como `/tabletop-helper/` en `vite.config.t
 ### Sudoku Killer (`src/pages/SudokuKiller.tsx`)
 
 Solver de cages para Killer Sudoku. Lógica:
+- La lógica pura está en `src/lib/sudoku-killer.ts` y tiene tests en `src/lib/sudoku-killer.test.ts`.
 - `computeCombinations(target, cells, excluded, required)` — recursivo, genera todas las combinaciones válidas de dígitos para una cage.
 - Estado con `useState`: `size`, `sum`, `digitStates`, `pairStates`, `activeTab`, `kdDifficulty`, `kdVolume`, `kdBook`.
 - `excluded` y `required` son `useMemo` sobre `digitStates`.
