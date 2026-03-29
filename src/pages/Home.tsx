@@ -1,38 +1,77 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import Topbar from '../components/Topbar'
+
+type Category = 'Puzzles' | 'Cartas' | 'Juegos'
 
 const TOOLS = [
   {
     to: '/tools/sudoku-killer',
     icon: '🔢',
-    chips: ['Sudoku', 'Solver', 'KrazyDad'],
+    category: 'Puzzles' as Category,
+    chips: ['Solver', 'Lógica'],
     title: 'Sudoku Killer',
     description: 'Solver de cages con filtros de dígitos, restricciones entre pares y acceso rápido a PDFs de KrazyDad.',
   },
   {
     to: '/tools/chinchon',
     icon: '🃏',
-    chips: ['Cartas', 'Scoreboard', 'Persistencia'],
+    category: 'Cartas' as Category,
+    chips: ['Scoreboard', 'Persistencia'],
     title: 'Anotador de Chinchón',
     description: 'Configura jugadores, suma rondas, marca chinchón o −10, y guarda/carga el estado de la partida.',
   },
   {
     to: '/tools/pacman-memory',
     icon: '👻',
-    chips: ['Pac-Man', 'Memoria', 'Multijugador'],
+    category: 'Juegos' as Category,
+    chips: ['Memoria', 'Multijugador'],
     title: 'Pac-Memory',
     description: 'Juego de memoria con sprites retro de Pac-Man, Space Invaders, Tetris y más. Para 2–3 jugadores.',
   },
   {
     to: '/tools/pacman-ludo',
     icon: '🕹️',
-    chips: ['Pac-Man', 'Ludo', 'Multijugador'],
+    category: 'Juegos' as Category,
+    chips: ['Tablero', 'Multijugador'],
     title: 'Pac-Ludo',
     description: 'Ludo temático de Pac-Man: movés fantasmas por el tablero, capturás rivales y llegás al centro.',
   },
 ]
 
+const CATEGORIES: Category[] = ['Puzzles', 'Cartas', 'Juegos']
+
+function loadFavorites(): Set<string> {
+  try {
+    const stored = localStorage.getItem('tabletop-favorites')
+    return stored ? new Set(JSON.parse(stored) as string[]) : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
+function saveFavorites(favs: Set<string>) {
+  localStorage.setItem('tabletop-favorites', JSON.stringify([...favs]))
+}
+
 export default function Home() {
+  const [activeCategory, setActiveCategory] = useState<Category | null>(null)
+  const [favorites, setFavorites] = useState<Set<string>>(loadFavorites)
+
+  function toggleFavorite(to: string) {
+    setFavorites(prev => {
+      const next = new Set(prev)
+      if (next.has(to)) next.delete(to)
+      else next.add(to)
+      saveFavorites(next)
+      return next
+    })
+  }
+
+  const filtered = TOOLS
+    .filter(t => activeCategory === null || t.category === activeCategory)
+    .sort((a, b) => Number(!favorites.has(a.to)) - Number(!favorites.has(b.to)))
+
   return (
     <main className="page">
       <Topbar label="tabletop-helper" sublabel="Herramientas de mesa" />
@@ -45,10 +84,37 @@ export default function Home() {
         </p>
       </section>
 
+      <div className="filter-bar" role="toolbar" aria-label="Filtrar por categoría">
+        <button
+          className={`filter-btn${activeCategory === null ? ' active' : ''}`}
+          onClick={() => setActiveCategory(null)}
+        >
+          Todos
+        </button>
+        {CATEGORIES.map(cat => (
+          <button
+            key={cat}
+            className={`filter-btn${activeCategory === cat ? ' active' : ''}`}
+            onClick={() => setActiveCategory(activeCategory === cat ? null : cat)}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
       <section className="grid" aria-label="Herramientas">
-        {TOOLS.map(tool => (
-          <article key={tool.to} className="card">
-            <div className="card-icon" aria-hidden="true">{tool.icon}</div>
+        {filtered.map(tool => (
+          <article key={tool.to} className={`card${favorites.has(tool.to) ? ' card--fav' : ''}`}>
+            <div className="card-header">
+              <div className="card-icon" aria-hidden="true">{tool.icon}</div>
+              <button
+                className={`fav-btn${favorites.has(tool.to) ? ' active' : ''}`}
+                aria-label={favorites.has(tool.to) ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+                onClick={() => toggleFavorite(tool.to)}
+              >
+                {favorites.has(tool.to) ? '★' : '☆'}
+              </button>
+            </div>
             <div className="chips">
               {tool.chips.map(chip => (
                 <span key={chip} className="chip">{chip}</span>
