@@ -21,6 +21,15 @@ const TOOLS = [
     title: 'Anotador de Chinchón',
     description: 'Configura jugadores, suma rondas, marca chinchón o −10, y guarda/carga el estado de la partida.',
   },
+
+  {
+    to: '/tools/chinchon-arena',
+    icon: '🎯',
+    category: 'Cartas' as Category,
+    chips: ['Arena', 'Bots'],
+    title: 'Chinchón Arena',
+    description: 'Arena de bots y modo de juego para practicar cortes, chinchón y estrategia de descarte.',
+  },
   {
     to: '/tools/pacman-memory',
     icon: '👻',
