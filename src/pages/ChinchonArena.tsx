@@ -133,6 +133,22 @@ if (gaps <= jokers) return true;
 return false;
 }
 
+/* -- nearChinchon with configurable threshold (for custom bots) -- */
+function nearChinchonCustom(hand, threshold) {
+const jokers = hand.filter(isJoker).length;
+const bySuit = {};
+hand.forEach(c => { if (!isJoker(c)) (bySuit[c.suit] ??= []).push(RANK_ORDER[c.rank]); });
+for (const orders of Object.values(bySuit)) {
+orders.sort((a, b) => a - b);
+for (let start = 0; start <= 5; start++) {
+let present = 0;
+for (let p = start; p <= start + 6; p++) { if (orders.includes(p)) present++; }
+if (present + jokers >= threshold) return true;
+}
+}
+return false;
+}
+
 /* -- Check if hand has 4+ consecutive same suit (for MartinMatic) -- */
 function has4RunSameSuit(hand) {
 const bySuit = {};
@@ -216,7 +232,7 @@ emoji: "🧪",
 colorIdx: 0,
 draw: { mode: "smart", restoThreshold: 3 },
 discard: { mode: "default" },
-cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: [{ minScore: 0, maxResto: 5 }, { minScore: 25, maxResto: 3 }, { minScore: 50, maxResto: 2 }, { minScore: 75, maxResto: 1 }], pursueChinchon: false },
+cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: [{ minScore: 0, maxResto: 5 }, { minScore: 25, maxResto: 3 }, { minScore: 50, maxResto: 2 }, { minScore: 75, maxResto: 1 }], pursueChinchon: false, chinchonThreshold: 6 },
 });
 
 function shouldDrawDiscard(hand, top, botObj) {
@@ -234,7 +250,7 @@ return a8.resto < b7.resto - (dc.restoThreshold ?? 3);
 
 function buildCanCut(cut) {
 return (m7, score, hand) => {
-if (cut.pursueChinchon && nearChinchon(hand)) return m7.minFree === 0;
+if (cut.pursueChinchon && nearChinchonCustom(hand, cut.chinchonThreshold ?? 6)) return m7.minFree === 0;
 const maxR = cut.useScoreRules
 ? ([...cut.scoreRules].reverse().find(r => (score ?? 0) >= r.minScore)?.maxResto ?? cut.baseResto)
 : cut.baseResto;
@@ -244,13 +260,13 @@ return m7.minFree <= cut.maxFree && m7.resto <= maxR;
 
 function generateDesc(cfg) {
 const parts = [];
-const dm = { always_deck: "Mazo", smart: "Inteligente", aggressive: "Agresivo" };
-parts.push("Robo: " + (dm[cfg.draw.mode] || "Inteligente"));
-const dd = { default: "Mayor valor", high_rank: "Mayor rango", optimal: "Óptimo" };
-parts.push("Desc: " + (dd[cfg.discard.mode] || "Mayor valor"));
-if (cfg.cut.useScoreRules) parts.push("Corte por puntaje");
+const dm = { always_deck: "Solo mazo", smart: "Robo inteligente", aggressive: "Robo agresivo" };
+parts.push(dm[cfg.draw.mode] || "Robo inteligente");
+const dd = { default: "Desc. por valor", high_rank: "Desc. por rango", optimal: "Desc. óptimo" };
+parts.push(dd[cfg.discard.mode] || "Desc. por valor");
+if (cfg.cut.useScoreRules) parts.push("Corte adaptativo");
 else parts.push("Corte ≤" + cfg.cut.baseResto);
-if (cfg.cut.pursueChinchon) parts.push("🎯chinchón");
+if (cfg.cut.pursueChinchon) parts.push("🎯chinchón(" + (cfg.cut.chinchonThreshold ?? 6) + ")");
 return parts.join(" · ");
 }
 
@@ -669,35 +685,54 @@ style={{ background: cc.color, borderColor: cfg.colorIdx === i ? "#fff" : cc.col
 
 {/* Draw */}
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
-<div className="text-xs font-bold mb-2" style={{ color: c.color }}>🃏 Robo (mazo vs descarte)</div>
-<div className="flex flex-col gap-1.5">
-{[["always_deck", "Siempre del mazo"], ["smart", "Inteligente (umbral)"], ["aggressive", "Agresivo (cualquier mejora)"]].map(([m, l]) => (
-<label key={m} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+<div className="text-xs font-bold mb-1" style={{ color: c.color }}>🃏 Estrategia de robo</div>
+<p className="text-xs text-gray-500 mb-2 leading-snug">¿Cuándo toma cartas del pozo de descarte en lugar del mazo?</p>
+<div className="flex flex-col gap-2">
+{([
+["always_deck", "Solo del mazo", "Nunca toma del descarte. Predecible, no revela qué cartas le sirven."],
+["smart", "Inteligente (umbral)", "Toma del descarte solo si reduce el resto más que el umbral configurado. Balanceado."],
+["aggressive", "Agresivo", "Toma del descarte ante cualquier mejora de resto. Reactivo y oportunista."],
+] as [string, string, string][]).map(([m, title, desc]) => (
+<label key={m} className="flex items-start gap-2 cursor-pointer">
 <input type="radio" name="draw" checked={cfg.draw.mode === m} onChange={() => upd("draw.mode", m)}
-className="accent-amber-500" />
-{l}
+className="accent-amber-500 mt-0.5 shrink-0" />
+<div>
+<span className={`text-sm ${cfg.draw.mode === m ? "text-gray-100 font-medium" : "text-gray-300"}`}>{title}</span>
+<p className="text-xs text-gray-500 leading-snug">{desc}</p>
+</div>
 </label>
 ))}
 </div>
 {cfg.draw.mode === "smart" && (
-<div className="mt-2 flex items-center gap-2">
-<span className="text-xs text-gray-500">Umbral de resto:</span>
+<div className="mt-3 border border-gray-600 rounded p-2">
+<div className="flex items-center gap-2">
+<span className="text-xs text-gray-400">Umbral de resto:</span>
 <input type="range" min={1} max={10} value={cfg.draw.restoThreshold} onChange={e => upd("draw.restoThreshold", +e.target.value)}
 className="flex-1 accent-amber-500" />
-<span className="text-xs font-mono text-gray-300 w-5 text-right">{cfg.draw.restoThreshold}</span>
+<span className="text-xs font-mono text-amber-400 w-5 text-right">{cfg.draw.restoThreshold}</span>
+</div>
+<p className="text-xs text-gray-600 mt-1 leading-snug">Toma del descarte solo si reduce el resto en más de {cfg.draw.restoThreshold} pts. Mayor = más conservador.</p>
 </div>
 )}
 </div>
 
 {/* Discard */}
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
-<div className="text-xs font-bold mb-2" style={{ color: c.color }}>🗑️ Descarte</div>
-<div className="flex flex-col gap-1.5">
-{[["default", "Mayor valor (descarta la carta suelta con más puntos)"], ["high_rank", "Mayor rango (descarta la carta suelta con número más alto)"], ["optimal", "Óptimo (prueba las 8 opciones, elige la mejor)"]].map(([m, l]) => (
-<label key={m} className="flex items-start gap-2 text-sm text-gray-300 cursor-pointer">
+<div className="text-xs font-bold mb-1" style={{ color: c.color }}>🗑️ Estrategia de descarte</div>
+<p className="text-xs text-gray-500 mb-2 leading-snug">¿Qué carta elimina de su mano en cada turno?</p>
+<div className="flex flex-col gap-2">
+{([
+["default", "Por valor (recomendado)", "Descarta la carta suelta con mayor valor en puntos. Minimiza el resto de forma directa."],
+["high_rank", "Por rango numérico", "Descarta la carta con número más alto aunque forme parte de un meld parcial. Más agresivo."],
+["optimal", "Óptimo (más lento)", "Evalúa las 8 posibles cartas a descartar y elige la que deja la mejor mano. Más inteligente pero más costoso computacionalmente."],
+] as [string, string, string][]).map(([m, title, desc]) => (
+<label key={m} className="flex items-start gap-2 cursor-pointer">
 <input type="radio" name="discard" checked={cfg.discard.mode === m} onChange={() => upd("discard.mode", m)}
-className="accent-amber-500 mt-0.5" />
-<span>{l}</span>
+className="accent-amber-500 mt-0.5 shrink-0" />
+<div>
+<span className={`text-sm ${cfg.discard.mode === m ? "text-gray-100 font-medium" : "text-gray-300"}`}>{title}</span>
+<p className="text-xs text-gray-500 leading-snug">{desc}</p>
+</div>
 </label>
 ))}
 </div>
@@ -705,53 +740,88 @@ className="accent-amber-500 mt-0.5" />
 
 {/* Cut */}
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
-<div className="text-xs font-bold mb-2" style={{ color: c.color }}>✂️ Corte</div>
-<div className="flex items-center gap-3 mb-3">
-<span className="text-xs text-gray-500">Máx cartas sueltas:</span>
+<div className="text-xs font-bold mb-1" style={{ color: c.color }}>✂️ Condición de corte</div>
+<p className="text-xs text-gray-500 mb-3 leading-snug">¿Cuándo decide que su mano es suficientemente buena para cortar la ronda?</p>
+
+<div className="mb-3">
+<span className="text-xs font-medium text-gray-300 block mb-0.5">Cartas sueltas máximas</span>
+<p className="text-xs text-gray-500 mb-2 leading-snug">Máximo de cartas fuera de melds al cortar. 0 = todas en juego · 1 = puede quedar una carta suelta.</p>
 <div className="flex gap-1">
 {[0, 1].map(v => (
 <button key={v} onClick={() => upd("cut.maxFree", v)}
 className={`px-3 py-1 rounded text-xs font-medium border transition-all ${cfg.cut.maxFree === v ? "border-2" : "border-gray-600 text-gray-400 hover:border-gray-500"}`}
 style={cfg.cut.maxFree === v ? { borderColor: c.color, color: c.color, background: `${c.color}15` } : {}}>
-{v}
+{v === 0 ? "0 — sin sueltas" : "1 — una suelta"}
 </button>
 ))}
 </div>
 </div>
 
 {!cfg.cut.useScoreRules && (
-<div className="flex items-center gap-2 mb-3">
-<span className="text-xs text-gray-500">Máx resto para cortar:</span>
+<div className="mb-3">
+<div className="flex items-center justify-between mb-0.5">
+<span className="text-xs font-medium text-gray-300">Resto máximo para cortar</span>
+<span className="text-xs font-mono text-amber-400">{cfg.cut.baseResto} pts</span>
+</div>
+<p className="text-xs text-gray-500 mb-1.5 leading-snug">Suma máxima de las cartas sueltas para decidir cortar. 0 = solo corta sin puntos sueltos. Mayor = más agresivo.</p>
 <input type="range" min={0} max={10} value={cfg.cut.baseResto} onChange={e => upd("cut.baseResto", +e.target.value)}
-className="flex-1 accent-amber-500" />
-<span className="text-xs font-mono text-gray-300 w-5 text-right">{cfg.cut.baseResto}</span>
+className="w-full accent-amber-500" />
 </div>
 )}
 
-<label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer mb-2">
+<div className="border-t border-gray-700 pt-3 mb-3">
+<label className="flex items-start gap-2 cursor-pointer">
 <input type="checkbox" checked={cfg.cut.useScoreRules} onChange={e => upd("cut.useScoreRules", e.target.checked)}
-className="accent-amber-500" />
-Reglas por puntaje
+className="accent-amber-500 mt-0.5 shrink-0" />
+<div>
+<span className={`text-sm ${cfg.cut.useScoreRules ? "text-gray-100 font-medium" : "text-gray-300"}`}>Corte adaptativo por puntaje</span>
+<p className="text-xs text-gray-500 leading-snug">Cambia el umbral de resto según los puntos acumulados. Permite estrategias más conservadoras cuando va ganando o más agresivas cuando pierde terreno.</p>
+</div>
 </label>
 {cfg.cut.useScoreRules && (
-<div className="ml-5 flex flex-col gap-1.5 mb-2">
+<div className="ml-5 flex flex-col gap-2 mt-3">
 {cfg.cut.scoreRules.map((r, i) => (
 <div key={i} className="flex items-center gap-2">
-<span className="text-xs text-gray-500 w-20">{r.minScore === 0 ? "0-24 pts" : r.minScore === 25 ? "25-49 pts" : r.minScore === 50 ? "50-74 pts" : "75+ pts"}:</span>
-<span className="text-xs text-gray-400">resto ≤</span>
+<span className="text-xs text-gray-500 w-20 shrink-0">{r.minScore === 0 ? "0–24 pts" : r.minScore === 25 ? "25–49 pts" : r.minScore === 50 ? "50–74 pts" : "75+ pts"}:</span>
+<span className="text-xs text-gray-400 shrink-0">resto ≤</span>
 <input type="range" min={0} max={10} value={r.maxResto} onChange={e => updRule(i, +e.target.value)}
 className="flex-1 accent-amber-500" />
-<span className="text-xs font-mono text-gray-300 w-5 text-right">{r.maxResto}</span>
+<span className="text-xs font-mono text-amber-400 w-5 text-right">{r.maxResto}</span>
 </div>
 ))}
 </div>
 )}
+</div>
 
-<label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+<div className="border-t border-gray-700 pt-3">
+<label className="flex items-start gap-2 cursor-pointer">
 <input type="checkbox" checked={cfg.cut.pursueChinchon} onChange={e => upd("cut.pursueChinchon", e.target.checked)}
-className="accent-amber-500" />
-🎯 Perseguir chinchón si está cerca
+className="accent-amber-500 mt-0.5 shrink-0" />
+<div>
+<span className={`text-sm ${cfg.cut.pursueChinchon ? "text-gray-100 font-medium" : "text-gray-300"}`}>🎯 Perseguir chinchón</span>
+<p className="text-xs text-gray-500 leading-snug">Si detecta que está cerca del chinchón, espera y solo corta con todas las cartas en melds (resto 0). Alto riesgo, alta recompensa.</p>
+</div>
 </label>
+{cfg.cut.pursueChinchon && (
+<div className="ml-5 mt-2">
+<span className="text-xs font-medium text-gray-400 block mb-1.5">¿Cuándo activar el modo chinchón?</span>
+<div className="flex gap-1.5">
+{([5, 6] as number[]).map(v => (
+<button key={v} onClick={() => upd("cut.chinchonThreshold", v)}
+className={`px-3 py-1.5 rounded text-xs font-medium border transition-all ${(cfg.cut.chinchonThreshold ?? 6) === v ? "border-2" : "border-gray-600 text-gray-400 hover:border-gray-500"}`}
+style={(cfg.cut.chinchonThreshold ?? 6) === v ? { borderColor: c.color, color: c.color, background: `${c.color}15` } : {}}>
+{v === 6 ? "6 cartas — estricto" : "5 cartas — ambicioso"}
+</button>
+))}
+</div>
+<p className="text-xs text-gray-600 mt-1.5 leading-snug">
+{(cfg.cut.chinchonThreshold ?? 6) === 6
+? "Persigue el chinchón solo cuando le faltan 1–2 cartas para completarlo."
+: "Comienza a perseguir el chinchón antes, incluso cuando le faltan 2–3 cartas."}
+</p>
+</div>
+)}
+</div>
 </div>
 
 {/* Preview */}
