@@ -570,21 +570,37 @@ boxShadow: isActive ? `0 0 0 1px ${botB.color}` : "none",
 );
 }
 
-/* -- Win rate evolution chart -- */
-function WinRateChart({ data, bot0, bot1 }) {
-if (data.length < 2) return null;
-const W = 500, H = 130;
-const PAD = { top: 12, right: 14, bottom: 22, left: 36 };
+/* -- Shared line chart for rate evolution (winrate + sweep) -- */
+function RateChart({ data, bot0, bot1 }: { data: {x: number, y0: number, y1: number}[], bot0: any, bot1: any }) {
+const W = 500, H = 140;
+const PAD = { top: 14, right: 52, bottom: 22, left: 38 };
 const plotW = W - PAD.left - PAD.right;
 const plotH = H - PAD.top - PAD.bottom;
-const rates = data.map(d => d.rate);
-const minR = Math.max(0, Math.floor((Math.min(...rates) - 4) / 5) * 5);
-const maxR = Math.min(100, Math.ceil((Math.max(...rates) + 4) / 5) * 5);
+// Empty state
+if (data.length < 2) {
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
+      {[25, 50, 75].map(v => (
+        <g key={v}>
+          <line x1={PAD.left} x2={W - PAD.right} y1={PAD.top + (1 - v / 100) * plotH} y2={PAD.top + (1 - v / 100) * plotH}
+            stroke={v === 50 ? "#374151" : "#1f2937"} strokeWidth={v === 50 ? 1 : 0.5} strokeDasharray="4,3" />
+          <text x={PAD.left - 4} y={PAD.top + (1 - v / 100) * plotH + 3.5} textAnchor="end" fill="#374151" fontSize="9">{v}%</text>
+        </g>
+      ))}
+      <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
+      <line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
+      <text x={PAD.left + plotW / 2} y={H / 2 + 4} textAnchor="middle" fill="#374151" fontSize="11">Esperando datos…</text>
+    </svg>
+  );
+}
+const allY = data.flatMap(d => [d.y0, d.y1]);
+const minR = Math.max(0, Math.floor((Math.min(...allY) - 4) / 5) * 5);
+const maxR = Math.min(100, Math.ceil((Math.max(...allY) + 4) / 5) * 5);
 const rng = maxR - minR || 1;
 const toX = (i) => PAD.left + (i / (data.length - 1)) * plotW;
 const toY = (r) => PAD.top + (1 - (r - minR) / rng) * plotH;
-const path0 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.rate).toFixed(1)}`).join(" ");
-const path1 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(100 - d.rate).toFixed(1)}`).join(" ");
+const path0 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.y0).toFixed(1)}`).join(" ");
+const path1 = data.map((d, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(d.y1).toFixed(1)}`).join(" ");
 const midTick = Math.floor(data.length / 2);
 return (
 <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
@@ -599,13 +615,13 @@ stroke={v === 50 ? "#4b5563" : "#1f2937"} strokeWidth={v === 50 ? 1 : 0.5} strok
 <text x={PAD.left - 4} y={H - PAD.bottom + 4} textAnchor="end" fill="#4b5563" fontSize="9">{minR}%</text>
 <line x1={PAD.left} x2={PAD.left} y1={PAD.top} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
 <line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom} y2={H - PAD.bottom} stroke="#374151" strokeWidth="1" />
-<text x={PAD.left} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[0].games}</text>
-<text x={PAD.left + plotW / 2} y={H - 5} textAnchor="middle" fill="#374151" fontSize="8">{data[midTick].games}</text>
-<text x={W - PAD.right} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[data.length - 1].games}</text>
+<text x={PAD.left} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[0].x}</text>
+<text x={PAD.left + plotW / 2} y={H - 5} textAnchor="middle" fill="#374151" fontSize="8">{data[midTick].x}</text>
+<text x={W - PAD.right} y={H - 5} textAnchor="middle" fill="#4b5563" fontSize="8">{data[data.length - 1].x}</text>
 <path d={path1} fill="none" stroke={bot1.color} strokeWidth="1.5" opacity="0.75" />
 <path d={path0} fill="none" stroke={bot0.color} strokeWidth="1.5" opacity="0.75" />
-<text x={W - PAD.right + 2} y={toY(data[data.length - 1].rate) + 3.5} fill={bot0.color} fontSize="8">{data[data.length - 1].rate.toFixed(1)}%</text>
-<text x={W - PAD.right + 2} y={toY(100 - data[data.length - 1].rate) + 3.5} fill={bot1.color} fontSize="8">{(100 - data[data.length - 1].rate).toFixed(1)}%</text>
+<text x={W - PAD.right + 2} y={toY(data[data.length - 1].y0) + 3.5} fill={bot0.color} fontSize="8">{data[data.length - 1].y0.toFixed(4)}%</text>
+<text x={W - PAD.right + 2} y={toY(data[data.length - 1].y1) + 3.5} fill={bot1.color} fontSize="8">{data[data.length - 1].y1.toFixed(4)}%</text>
 </svg>
 );
 }
@@ -674,6 +690,86 @@ PREGUNTAS:
 1. ¿Por qué creés que el bot ganador tuvo esa ventaja? Explicá en términos de las mecánicas del juego.
 2. ¿Qué cambios en la configuración del bot perdedor lo harían más competitivo?
 3. ¿Hay algún escenario donde la estrategia del bot perdedor sea superior?`;
+}
+
+function generateNewBotPrompt(simContext?: string) {
+const schema = `{
+  "name": string,         // 1–12 caracteres
+  "emoji": string,        // UNO de: 🧪 ⚡ 🎲 💎 🦾 🧠 🔥 🤡 🎯 🎭 🚀 💀 👻 🕷️ 🍀 🌟 👑 🐉 🦊 🦁 🌊 🏆 🌋 🛡️ 🎪 🎸 🦈 🦋 🌈 🎩 🔱 🌀
+  "colorIdx": number,     // entero 0–7
+  "description": string,  // hasta 120 caracteres, descripción de la estrategia
+  "draw": {
+    "mode": "always_deck" | "smart" | "aggressive",
+    //   always_deck → nunca roba del descarte
+    //   smart       → roba del descarte solo si reduce el resto en más de restoThreshold puntos
+    //   aggressive  → roba del descarte ante cualquier mejora de resto
+    "restoThreshold": number  // 1–10; solo relevante si mode = "smart"
+  },
+  "discard": {
+    "mode": "default" | "high_rank" | "optimal"
+    //   default    → descarta la carta suelta con mayor valor en puntos
+    //   high_rank  → descarta la carta con número más alto, incluso si está en meld parcial
+    //   optimal    → evalúa los 8 posibles descartes y elige el que deja la mejor mano (más inteligente)
+  },
+  "cut": {
+    "maxFree": 0 | 1,         // 0 = solo corta sin cartas sueltas; 1 = tolera hasta 1 carta suelta
+    "baseResto": number,       // 0–5; umbral de resto máximo para cortar (si useScoreRules = false)
+    "useScoreRules": boolean,  // true = usa scoreRules en lugar de baseResto
+    "scoreRules": [            // exactamente 4 entradas fijas, una por rango de puntaje propio
+      { "minScore": 0,  "maxResto": number },   // cuando tengo 0–24 puntos
+      { "minScore": 25, "maxResto": number },   // cuando tengo 25–49 puntos
+      { "minScore": 50, "maxResto": number },   // cuando tengo 50–74 puntos
+      { "minScore": 75, "maxResto": number }    // cuando tengo 75+ puntos (cerca del límite)
+    ],
+    "pursueChinchon": boolean,     // true = cuando está cerca del chinchón, solo corta con mano perfecta
+    "chinchonThreshold": 5 | 6,    // 6 = le faltan 1–2 cartas; 5 = activa antes (más ambicioso)
+    "chinchonRunMode": boolean      // true = con corrida de 4+ cartas del mismo palo, espera el chinchón
+  }
+}`;
+
+const example = `{
+  "name": "EjemploBot",
+  "emoji": "🧠",
+  "colorIdx": 1,
+  "description": "Equilibrado: roba del descarte cuando conviene y ajusta el umbral de corte según el marcador.",
+  "draw": { "mode": "smart", "restoThreshold": 3 },
+  "discard": { "mode": "default" },
+  "cut": {
+    "maxFree": 1,
+    "baseResto": 4,
+    "useScoreRules": true,
+    "scoreRules": [
+      { "minScore": 0,  "maxResto": 4 },
+      { "minScore": 25, "maxResto": 3 },
+      { "minScore": 50, "maxResto": 2 },
+      { "minScore": 75, "maxResto": 1 }
+    ],
+    "pursueChinchon": false,
+    "chinchonThreshold": 6,
+    "chinchonRunMode": false
+  }
+}`;
+
+return `Sos un experto en estrategia de Chinchón con baraja española (50 cartas, 2 comodines).
+
+OBJETIVO: Diseñá un nuevo bot de Chinchón con una estrategia original y competitiva.
+${simContext ? "Usá el contexto de simulación al final de este mensaje como guía para mejorar los bots analizados o crear uno que cubra sus debilidades." : "Pensá en una estrategia diferenciada: podés ser agresivo, defensivo, adaptativo, o especializado en chinchón."}
+
+REGLAS CLAVE DEL JUEGO:
+- 7 cartas por jugador. Turno: roba del mazo o del descarte, luego descarta 1.
+- Melds válidos: escalera de 3–7 cartas del mismo palo, o trío/cuarteto del mismo n��mero.
+- Para cortar: resto (suma de valores de cartas sueltas fuera de melds) ≤ 5 y máx 1 carta suelta.
+- Corte con todas las cartas en melds: el cortador suma −10 puntos.
+- Chinchón: 7 cartas consecutivas del mismo palo (sin comodines) → victoria instantánea.
+- Se elimina al llegar a 100 puntos. El perdedor de cada ronda suma el resto del cortador.
+
+ESQUEMA JSON (único formato válido para importar el bot):
+${schema}
+
+EJEMPLO DE JSON VÁLIDO:
+${example}
+${simContext ? `\nCONTEXTO DE SIMULACIÓN PREVIA:\n${simContext}` : ""}
+INSTRUCCIÓN FINAL: Respondé ÚNICAMENTE con el JSON del nuevo bot. Sin texto antes, sin texto después, sin bloques de código markdown (no uses \`\`\`json). Solo el objeto JSON puro.`;
 }
 
 function getBotConfig(idx, customConfigs) {
@@ -1218,10 +1314,14 @@ const [gameWins, setGameWins] = useState([0, 0]);
 const [sweepWins, setSweepWins] = useState([0, 0, 0]); // [bot0 sweeps, bot1 sweeps, splits]
 const [totalRounds, setTotalRounds] = useState(0);
 const [winRateHistory, setWinRateHistory] = useState<{games: number, rate: number}[]>([]);
+const [sweepRateHistory, setSweepRateHistory] = useState<{pairs: number, rate0: number, rate1: number}[]>([]);
 const [chinchonWins, setChinchonWins] = useState([0, 0]);
 const [simRun, setSimRun] = useState(false);
 const [prog, setProg] = useState(0);
 const [promptCopied, setPromptCopied] = useState(false);
+const [newBotPromptCopied, setNewBotPromptCopied] = useState(false);
+const [chartTab, setChartTab] = useState<"winrate" | "sweep">("winrate");
+const [chartZoom, setChartZoom] = useState<number | null>(null);
 const stopRef = useRef(false);
 
 // Match viewer
@@ -1243,9 +1343,10 @@ const [showBot, setShowBot] = useState(false);
 const runSim = useCallback(() => {
 stopRef.current = false; setSimRun(true); setProg(0); setChartData(null);
 setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
-setWinRateHistory([]); setChinchonWins([0, 0]); setPromptCopied(false);
+setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); setPromptCopied(false);
 const fd = {}, dd = {}; let rw0 = 0, rw1 = 0, gw0 = 0, gw1 = 0, sw0 = 0, sw1 = 0, splits = 0, tr = 0, cc0 = 0, cc1 = 0, done = 0;
 const wrSnaps: {games: number, rate: number}[] = [];
+const swSnaps: {pairs: number, rate0: number, rate1: number}[] = [];
 const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
 const tick = () => {
 if (stopRef.current) { setSimRun(false); return; }
@@ -1271,14 +1372,68 @@ if (rs.chinchon) { if (rs.winner === 0) cc0++; else cc1++; }
 done = end;
 const totalG = gw0 + gw1;
 if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
+const totalPairs = sw0 + sw1 + splits;
+if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
 setProg(Math.round(done / numGames * 100));
 setChartData(buildChartData(fd, dd, n0, n1));
 setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
-setWinRateHistory([...wrSnaps]); setChinchonWins([cc0, cc1]);
+setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonWins([cc0, cc1]);
 if (done < numGames) setTimeout(tick, 0); else setSimRun(false);
 };
 setTimeout(tick, 0);
 }, [numGames, simB0, simB1]);
+
+const runSimUntilStable = useCallback(() => {
+stopRef.current = false; setSimRun(true); setProg(0); setChartData(null);
+setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
+setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); setPromptCopied(false);
+const fd = {}, dd = {}; let rw0 = 0, rw1 = 0, gw0 = 0, gw1 = 0, sw0 = 0, sw1 = 0, splits = 0, tr = 0, cc0 = 0, cc1 = 0, done = 0;
+const wrSnaps: {games: number, rate: number}[] = [];
+const swSnaps: {pairs: number, rate0: number, rate1: number}[] = [];
+const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
+const STABLE_WINDOW = 20;
+const STABLE_THRESHOLD = 0.3; // pp std dev
+const MIN_GAMES = 200;
+const BATCH = 20;
+const isStable = () => {
+  if (wrSnaps.length < STABLE_WINDOW || done < MIN_GAMES) return false;
+  const recent = wrSnaps.slice(-STABLE_WINDOW).map(s => s.rate);
+  const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
+  const stddev = Math.sqrt(recent.reduce((a, b) => a + (b - mean) ** 2, 0) / recent.length);
+  return stddev < STABLE_THRESHOLD;
+};
+const tick = () => {
+if (stopRef.current) { setSimRun(false); return; }
+for (let i = 0; i < BATCH; i++) {
+const [gA, gB] = simulateGamePair(simB0, simB1);
+const winnerA = gA.gameLoser === 0 ? 1 : 0;
+const winnerB = gB.gameLoser === 0 ? 1 : 0;
+if (winnerA === 0) gw0++; else gw1++;
+if (winnerB === 0) gw0++; else gw1++;
+if (winnerA === 0 && winnerB === 0) sw0++;
+else if (winnerA === 1 && winnerB === 1) sw1++;
+else splits++;
+for (const game of [gA, gB]) {
+for (const rs of game.roundStats) {
+tr++;
+if (rs.winner === 0) { rw0++; fd[rs.cards] = (fd[rs.cards] || 0) + 1; } else { rw1++; dd[rs.cards] = (dd[rs.cards] || 0) + 1; }
+if (rs.chinchon) { if (rs.winner === 0) cc0++; else cc1++; }
+}
+}
+done++;
+}
+const totalG = gw0 + gw1;
+if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
+const totalPairs = sw0 + sw1 + splits;
+if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
+setProg(Math.min(99, Math.round((done / Math.max(done, MIN_GAMES)) * 50 + (isStable() ? 50 : 0))));
+setChartData(buildChartData(fd, dd, n0, n1));
+setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
+setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonWins([cc0, cc1]);
+if (isStable()) { setSimRun(false); setProg(100); } else setTimeout(tick, 0);
+};
+setTimeout(tick, 0);
+}, [simB0, simB1]);
 
 // -- Match viewer --
 const replay = replayPair ? (matchRound === "A" ? replayPair.replayA : replayPair.replayB) : null;
@@ -1367,7 +1522,7 @@ const isLast = replay && si >= replay.length - 1;
 const total = gameWins[0] + gameWins[1];
 const totalR = totalRounds;
 let canPlayerCut = false;
-if (g?.phase === "playerDiscard" && g.pHand.length <= 7) {
+if (g?.phase === "playerDiscard" && g.pHand.length <= 8) {
 canPlayerCut = g.pHand.some((c, i) => {
 if (isJoker(c)) return false;
 const test = g.pHand.filter((_, j) => j !== i);
@@ -1415,8 +1570,12 @@ return (
             </button>
           ))}
         </div>
-        {!simRun ? <button onClick={runSim} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95 mt-1">Simular {numGames >= 1000 ? `${numGames / 1000}k` : numGames} partidas</button>
-          : <button onClick={() => { stopRef.current = true; }} className="bg-red-600 hover:bg-red-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold mt-1">Parar ({prog}%)</button>}
+        {!simRun ? (
+          <div className="flex gap-2 mt-1 flex-wrap justify-center">
+            <button onClick={runSim} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95">Simular {numGames >= 1000 ? `${numGames / 1000}k` : numGames} partidas</button>
+            <button onClick={runSimUntilStable} className="bg-violet-700 hover:bg-violet-600 text-white px-4 py-1.5 rounded-md text-sm font-semibold active:scale-95" title="Corre hasta que el winrate se estabilice (desvío estándar < 0.3pp en las últimas 20 muestras)">⚖️ Auto-estabilizar</button>
+          </div>
+        ) : <button onClick={() => { stopRef.current = true; }} className="bg-red-600 hover:bg-red-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold mt-1">Parar ({prog}%)</button>}
       </div>
       <div className="text-xs text-gray-600 mb-3 text-center">Cada sim = 2 partidas simultáneas con rondas espejo · Chinchón = gana partida</div>
       {simRun && <div className="w-full h-1 bg-gray-800 rounded-full mb-3 overflow-hidden"><div className="h-full bg-gradient-to-r from-emerald-500 to-violet-500 transition-all" style={{ width: `${prog}%` }} /></div>}
@@ -1425,9 +1584,9 @@ return (
         <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4">
           <h2 className="text-xs text-gray-500 text-center mb-3 uppercase tracking-wider">Partidas ganadas</h2>
           <div className="flex items-center justify-between">
-            <div className="text-center flex-1"><div className="text-3xl font-bold" style={{ color: BOT[simB0].color }}>{gameWins[0]}</div><div className="text-xs text-gray-500">{((gameWins[0] / total) * 100).toFixed(1)}%</div><div className="text-xs mt-0.5" style={{ color: BOT[simB0].color }}>{BOT[simB0].name}</div></div>
+            <div className="text-center flex-1"><div className="text-3xl font-bold" style={{ color: BOT[simB0].color }}>{gameWins[0]}</div><div className="text-xs text-gray-500">{((gameWins[0] / total) * 100).toFixed(4)}%</div><div className="text-xs mt-0.5" style={{ color: BOT[simB0].color }}>{BOT[simB0].name}</div></div>
             <div className="text-center px-3"><div className="text-xs text-gray-600">{total} partidas</div><div className="text-gray-700 text-xl">-</div></div>
-            <div className="text-center flex-1"><div className="text-3xl font-bold" style={{ color: BOT[simB1].color }}>{gameWins[1]}</div><div className="text-xs text-gray-500">{((gameWins[1] / total) * 100).toFixed(1)}%</div><div className="text-xs mt-0.5" style={{ color: BOT[simB1].color }}>{BOT[simB1].name}</div></div>
+            <div className="text-center flex-1"><div className="text-3xl font-bold" style={{ color: BOT[simB1].color }}>{gameWins[1]}</div><div className="text-xs text-gray-500">{((gameWins[1] / total) * 100).toFixed(4)}%</div><div className="text-xs mt-0.5" style={{ color: BOT[simB1].color }}>{BOT[simB1].name}</div></div>
           </div>
         </div>
       )}
@@ -1436,9 +1595,9 @@ return (
         <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
           <h2 className="text-xs text-gray-500 text-center mb-2 uppercase tracking-wider">Rondas ganadas</h2>
           <div className="flex items-center justify-between">
-            <div className="text-center flex-1"><div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{roundWins[0]}</div><div className="text-xs text-gray-500">{((roundWins[0] / totalR) * 100).toFixed(1)}%</div></div>
+            <div className="text-center flex-1"><div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{roundWins[0]}</div><div className="text-xs text-gray-500">{((roundWins[0] / totalR) * 100).toFixed(4)}%</div></div>
             <div className="text-center px-3"><div className="text-xs text-gray-600">{totalR} rondas</div></div>
-            <div className="text-center flex-1"><div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{roundWins[1]}</div><div className="text-xs text-gray-500">{((roundWins[1] / totalR) * 100).toFixed(1)}%</div></div>
+            <div className="text-center flex-1"><div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{roundWins[1]}</div><div className="text-xs text-gray-500">{((roundWins[1] / totalR) * 100).toFixed(4)}%</div></div>
           </div>
         </div>
       )}
@@ -1450,7 +1609,7 @@ return (
           <div className="flex items-center justify-between">
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{sweepWins[0]}</div>
-              <div className="text-xs text-gray-500">{(sweepWins[0] + sweepWins[1] + sweepWins[2]) > 0 ? ((sweepWins[0] / (sweepWins[0] + sweepWins[1] + sweepWins[2])) * 100).toFixed(1) : 0}%</div>
+              <div className="text-xs text-gray-500">{(sweepWins[0] + sweepWins[1] + sweepWins[2]) > 0 ? ((sweepWins[0] / (sweepWins[0] + sweepWins[1] + sweepWins[2])) * 100).toFixed(4) : "0.0000"}%</div>
             </div>
             <div className="text-center px-3">
               <div className="text-xs text-gray-500">{sweepWins[2]} empates</div>
@@ -1458,29 +1617,62 @@ return (
             </div>
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{sweepWins[1]}</div>
-              <div className="text-xs text-gray-500">{(sweepWins[0] + sweepWins[1] + sweepWins[2]) > 0 ? ((sweepWins[1] / (sweepWins[0] + sweepWins[1] + sweepWins[2])) * 100).toFixed(1) : 0}%</div>
+              <div className="text-xs text-gray-500">{(sweepWins[0] + sweepWins[1] + sweepWins[2]) > 0 ? ((sweepWins[1] / (sweepWins[0] + sweepWins[1] + sweepWins[2])) * 100).toFixed(4) : "0.0000"}%</div>
             </div>
           </div>
         </div>
       )}
 
-      {winRateHistory.length >= 2 && (
-        <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4">
-          <h2 className="text-xs text-gray-500 text-center mb-1 uppercase tracking-wider">Evolución del winrate</h2>
-          <p className="text-xs text-gray-600 text-center mb-2">Si la línea se estabiliza, la muestra es suficiente</p>
-          <WinRateChart data={winRateHistory} bot0={BOT[simB0]} bot1={BOT[simB1]} />
-          <div className="flex justify-center gap-4 mt-1 text-xs">
-            <span className="inline-flex items-center gap-1" style={{ color: BOT[simB0].color }}>
-              <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB0].color, display: "inline-block" }} />
-              {BOT[simB0].name}
-            </span>
-            <span className="inline-flex items-center gap-1" style={{ color: BOT[simB1].color }}>
-              <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB1].color, display: "inline-block" }} />
-              {BOT[simB1].name}
-            </span>
+      {/* Combined charts panel — always visible */}
+      {(() => {
+        const winData = winRateHistory.map(d => ({ x: d.games, y0: d.rate, y1: 100 - d.rate }));
+        const sweepData = sweepRateHistory.map(d => ({ x: d.pairs, y0: d.rate0, y1: d.rate1 }));
+        const activeData = chartTab === "winrate" ? winData : sweepData;
+        const sliced = chartZoom ? activeData.slice(-chartZoom) : activeData;
+        const ZOOM_OPTS: (number | null)[] = [null, 200, 100, 50, 20];
+        return (
+          <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4">
+            {/* Header row: tabs left, zoom right */}
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <div className="flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
+                <button onClick={() => setChartTab("winrate")}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${chartTab === "winrate" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                  Winrate
+                </button>
+                <button onClick={() => setChartTab("sweep")}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${chartTab === "sweep" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>
+                  Corridas espejo
+                </button>
+              </div>
+              <div className="flex gap-0.5 items-center">
+                <span className="text-xs text-gray-600 mr-1">Zoom:</span>
+                {ZOOM_OPTS.map(z => (
+                  <button key={z ?? "all"} onClick={() => setChartZoom(z)}
+                    className={`px-1.5 py-0.5 rounded text-xs border transition-all ${chartZoom === z ? "border-gray-500 text-gray-200 bg-gray-700" : "border-gray-700 text-gray-600 hover:text-gray-400 hover:border-gray-600"}`}>
+                    {z === null ? "Todo" : z}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-xs text-gray-600 text-center mb-2">
+              {chartTab === "winrate"
+                ? "Partidas ganadas acumuladas · si la línea se estabiliza, la muestra es suficiente"
+                : "% de corridas donde cada bot gana ambas partidas espejo (sin empates)"}
+            </p>
+            <RateChart data={sliced} bot0={BOT[simB0]} bot1={BOT[simB1]} />
+            <div className="flex justify-center gap-4 mt-1.5 text-xs">
+              <span className="inline-flex items-center gap-1" style={{ color: BOT[simB0].color }}>
+                <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB0].color, display: "inline-block" }} />
+                {BOT[simB0].name}
+              </span>
+              <span className="inline-flex items-center gap-1" style={{ color: BOT[simB1].color }}>
+                <span className="rounded" style={{ width: "10px", height: "2px", background: BOT[simB1].color, display: "inline-block" }} />
+                {BOT[simB1].name}
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {(chinchonWins[0] + chinchonWins[1]) > 0 && (
         <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
@@ -1488,12 +1680,12 @@ return (
           <div className="flex items-center justify-between">
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{chinchonWins[0]}</div>
-              <div className="text-xs text-gray-500">{(chinchonWins[0] / (gameWins[0] + gameWins[1]) * 100).toFixed(2)}% de partidas</div>
+              <div className="text-xs text-gray-500">{(chinchonWins[0] / (gameWins[0] + gameWins[1]) * 100).toFixed(4)}% de partidas</div>
             </div>
             <div className="text-center px-3 text-xs text-gray-600">🏆 por bot</div>
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{chinchonWins[1]}</div>
-              <div className="text-xs text-gray-500">{(chinchonWins[1] / (gameWins[0] + gameWins[1]) * 100).toFixed(2)}% de partidas</div>
+              <div className="text-xs text-gray-500">{(chinchonWins[1] / (gameWins[0] + gameWins[1]) * 100).toFixed(4)}% de partidas</div>
             </div>
           </div>
         </div>
@@ -1522,8 +1714,8 @@ return (
         </div>
       )}
 
-      {total > 0 && (
-        <div className="w-full flex justify-center mb-4">
+      <div className="w-full flex flex-col items-center gap-2 mb-4">
+        {total > 0 && (
           <button onClick={() => {
             const prompt = generateSimPrompt(
               getBotConfig(simB0, customConfigs),
@@ -1534,10 +1726,23 @@ return (
             setPromptCopied(true);
             setTimeout(() => setPromptCopied(false), 3000);
           }} className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-500 text-gray-300 hover:text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors active:scale-95">
-            {promptCopied ? "✓ Prompt copiado al portapapeles" : "🤖 Exportar prompt para LLM"}
+            {promptCopied ? "✓ Copiado" : "🤖 Analizar resultados con LLM"}
           </button>
-        </div>
-      )}
+        )}
+        <button onClick={() => {
+          const simContext = total > 0 ? generateSimPrompt(
+            getBotConfig(simB0, customConfigs),
+            getBotConfig(simB1, customConfigs),
+            { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numGames }
+          ) : undefined;
+          navigator.clipboard.writeText(generateNewBotPrompt(simContext));
+          setNewBotPromptCopied(true);
+          setTimeout(() => setNewBotPromptCopied(false), 3000);
+        }} className="flex items-center gap-2 bg-violet-900 hover:bg-violet-800 border border-violet-700 hover:border-violet-500 text-violet-200 hover:text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors active:scale-95">
+          {newBotPromptCopied ? "✓ Copiado" : "🧬 Generar nuevo bot con LLM"}
+        </button>
+        {total > 0 && <p className="text-xs text-gray-600 text-center">Usá ambos prompts juntos: primero el análisis, después el generador</p>}
+      </div>
 
       {!chartData && !simRun && <div className="text-gray-600 mt-6 text-sm">Elegí los bots y dale a <span className="text-emerald-500">Simular</span></div>}
     </div>
