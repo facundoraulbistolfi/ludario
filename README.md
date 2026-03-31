@@ -17,6 +17,8 @@ Solver de cages para Killer Sudoku. Ingresás el tamaño de la cage y la suma ob
 ### Anotador de Chinchón
 Scoreboard completo para el juego de cartas Chinchón. Configura de 2 a 6 jugadores, suma rondas, registra chinchones y penalizaciones de −10, y guarda/carga el estado de la partida via clipboard.
 
+### Anotador de Truco
+Marcador de truco en palitos con soporte de buenas/malas, pensado para partidas rápidas entre “nosotros” y “ellos”.
 
 ### Chinchón Arena
 Arena de estrategias para Chinchón con bots, simulaciones y replay de manos. Permite comparar comportamientos entre bots, correr partidas espejo y jugar contra una IA en modo interactivo.
@@ -35,6 +37,7 @@ Ludo temático de Pac-Man: movés fichas de fantasmas por el tablero, capturás 
 - `/#/` → Home
 - `/#/tools/sudoku-killer` → Sudoku Killer
 - `/#/tools/chinchon` → Anotador de Chinchón
+- `/#/tools/truco` → Anotador de Truco
 - `/#/tools/chinchon-arena` → Chinchón Arena
 - `/#/tools/pacman-memory` → Pac-Memory
 - `/#/tools/pacman-ludo` → Pac-Ludo
