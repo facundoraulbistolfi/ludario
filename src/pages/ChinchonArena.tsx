@@ -571,7 +571,7 @@ const pHand = deck.splice(0, 7), bHand = deck.splice(0, 7);
 if (firstTurn === 0) pHand.push(deck.pop()); else bHand.push(deck.pop());
 // Phase: if player starts → playerDiscard (skip draw); if bot starts → botTurn (handles 8-card discard)
 const phase = firstTurn === 0 ? "playerDiscard" : "botTurn";
-return { phase, deck, discardPile: [], pHand, bHand, scores: [...scores], dealer, turn: firstTurn, selectedIdx: null, roundResult: null, message: null, drawnCard: null };
+return { phase, deck, discardPile: [], pHand, bHand, scores: [...scores], dealer, turn: firstTurn, selectedIdx: null, roundResult: null, message: null, drawnCard: null, botLastAction: null, cutMode: false };
 }
 function botTakeTurn(g, botObj) {
 const hand = [...g.bHand.map(c => ({ ...c }))], deck = [...g.deck], dp = [...g.discardPile];
@@ -582,9 +582,10 @@ if (hand.length === 8) {
   if (botObj.canCut(m7, g.scores[1], hand)) {
     const cs = cutScore(hand); const pM = findBestMelds(g.pHand);
     return { ...g, bHand: hand, deck, discardPile: dp, phase: "roundEnd", drawnCard: null, botDiscard: disc,
+      botLastAction: { drew: "initial", discarded: disc },
       roundResult: { cutter: "bot", bScore: cs.score, pScore: pM.resto, bMelds: m7, pMelds: pM, chinchon: cs.chinchon } };
   }
-  return { ...g, bHand: hand, deck, discardPile: dp, phase: "playerDraw", turn: 0, drawnCard: null, botDiscard: disc, message: null };
+  return { ...g, bHand: hand, deck, discardPile: dp, phase: "playerDraw", turn: 0, drawnCard: null, botDiscard: disc, message: null, botLastAction: { drew: "initial", discarded: disc } };
 }
 const top = dp.length ? dp[dp.length - 1] : null;
 let drawDisc = false;
@@ -601,14 +602,16 @@ const m7 = findBestMelds(hand);
 if (botObj.canCut(m7, g.scores[1], hand)) {
 const cs = cutScore(hand); const pM = findBestMelds(g.pHand);
 return { ...g, bHand: hand, deck, discardPile: dp, phase: "roundEnd", drawnCard: drawn, botDiscard: disc,
+botLastAction: { drew: drawDisc ? "discard" : "deck", discarded: disc },
 roundResult: { cutter: "bot", bScore: cs.score, pScore: pM.resto, bMelds: m7, pMelds: pM, chinchon: cs.chinchon } };
 }
-return { ...g, bHand: hand, deck, discardPile: dp, phase: "playerDraw", turn: 0, drawnCard: drawn, botDiscard: disc, message: null };
+return { ...g, bHand: hand, deck, discardPile: dp, phase: "playerDraw", turn: 0, drawnCard: drawn, botDiscard: disc, message: null, botLastAction: { drew: drawDisc ? "discard" : "deck", discarded: disc } };
 }
 
 /* ==============================================================
 UI COMPONENTS
 ============================================================== */
+function cardLabel(c) { return isJoker(c) ? "🃏" : `${RANK_LABEL[c.rank]}${SUIT_ICON[c.suit]}`; }
 function CardC({ card, inMeld, highlight, small, onClick, selected, faceDown }) {
 const sz = small ? "w-8 h-12 text-xs" : "w-11 h-16 text-sm";
 if (faceDown) return (
