@@ -21,7 +21,6 @@
 
   min-height: 100vh;
   background:
-    /* textura papel envejecido sutil */
     repeating-linear-gradient(
       0deg,
       transparent,
@@ -37,14 +36,13 @@
 .cartel {
   position: relative;
   margin: 0 0 24px;
-  padding: 28px 24px 24px;
+  padding: 24px 24px 20px;
   text-align: center;
 
   background: var(--tinta2);
   border: 3px solid var(--dorado);
   border-radius: 4px;
 
-  /* doble borde interior — efecto fileteado */
   outline: 6px solid var(--tinta2);
   outline-offset: -10px;
   box-shadow:
@@ -53,7 +51,6 @@
     0 8px 32px var(--shadow);
 }
 
-/* esquinas decorativas */
 .cartel::before,
 .cartel::after {
   content: '❧';
@@ -84,7 +81,7 @@
 }
 
 .cartelTitle {
-  margin: 2px 0 6px;
+  margin: 2px 0 4px;
   font-family: 'Playfair Display', serif;
   font-size: clamp(3.2rem, 8vw, 5.5rem);
   font-weight: 900;
@@ -96,38 +93,29 @@
   letter-spacing: .04em;
 }
 
-.cartelSub {
-  margin: 0;
-  font-size: .8rem;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--crema2);
-  opacity: .75;
-}
-
 /* ── Tablero ────────────────────────────────────────────────────────────── */
 .tablero {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 12px;
 }
 
 /* ── Panel de equipo ────────────────────────────────────────────────────── */
 .panel {
   position: relative;
-  padding: 20px 16px 16px;
+  padding: 16px 12px 14px;
   border: 2.5px solid var(--dorado);
   border-radius: 4px;
   background: var(--tinta2);
 
-  /* doble borde interior */
   outline: 5px solid var(--tinta2);
   outline-offset: -9px;
   box-shadow: 0 0 0 9px var(--dorado), 0 6px 20px var(--shadow);
 
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  align-items: center;
+  gap: 12px;
   transition: transform .15s ease;
 }
 
@@ -145,6 +133,7 @@
 .nombreWrap {
   position: relative;
   text-align: center;
+  width: 100%;
 }
 
 .nombreInput {
@@ -154,7 +143,7 @@
   outline: none;
   text-align: center;
   font-family: 'Dancing Script', cursive;
-  font-size: 1.9rem;
+  font-size: clamp(1.3rem, 4vw, 1.9rem);
   font-weight: 700;
   color: var(--crema);
   caret-color: var(--dorado2);
@@ -179,7 +168,7 @@
 
 .puntaje {
   font-family: 'Playfair Display', serif;
-  font-size: clamp(3.5rem, 8vw, 5rem);
+  font-size: clamp(2.5rem, 6vw, 3.8rem);
   font-weight: 900;
   color: var(--crema);
   text-shadow: 2px 2px 0 var(--rojo), 0 4px 12px rgba(0,0,0,.4);
@@ -187,95 +176,78 @@
 
 .puntajeDe {
   font-family: 'Oswald', sans-serif;
-  font-size: .9rem;
+  font-size: .85rem;
   color: var(--dorado);
   opacity: .7;
   margin-left: 4px;
   vertical-align: middle;
 }
 
-/* ── Segmentos malas / buenas ───────────────────────────────────────────── */
-.segmentos {
-  display: grid;
-  grid-template-columns: 1fr 4px 1fr;
-  gap: 8px;
-  align-items: start;
+/* ── Palitos verticales ─────────────────────────────────────────────────── */
+.palitoVertical {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 0;
 }
 
-.segmentoDiv {
-  width: 2px;
-  align-self: stretch;
-  background: linear-gradient(180deg, transparent, var(--dorado), transparent);
-  margin: 0 auto;
-}
-
-.segmento {
+.palitoSection {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 10px 6px 8px;
-  border-radius: 3px;
-  border: 1px solid transparent;
-  transition: background .2s, border-color .2s;
+  padding: 8px 4px;
+  border-radius: 4px;
+  width: 100%;
+  transition: background .2s;
 }
 
-.segmentoActive {
-  background: rgba(200,151,43,.08);
-  border-color: rgba(200,151,43,.3);
+.palitoSectionActive {
+  background: rgba(200, 151, 43, .07);
 }
 
-.segmentoLabel {
-  font-family: 'Oswald', sans-serif;
-  font-size: .65rem;
-  letter-spacing: .18em;
-  text-transform: uppercase;
-  color: var(--dorado);
-  opacity: .85;
+.sectionDivider {
+  width: 65%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--dorado), transparent);
+  margin: 2px 0;
+  opacity: .5;
 }
 
-.segmentoCount {
-  font-family: 'Oswald', sans-serif;
-  font-size: .75rem;
-  color: var(--crema2);
-  opacity: .6;
+/* ── Cajas de grupo ─────────────────────────────────────────────────────── */
+.grupoBox {
+  display: block;
+  width: clamp(38px, 55%, 52px);
+  height: auto;
+  stroke: rgba(245, 234, 214, .18);
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.4));
+  transition: stroke .15s, opacity .15s;
 }
 
-/* ── Palitos SVG ────────────────────────────────────────────────────────── */
-.palitoRow {
-  min-height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.palitoSvg {
+.grupoBoxActive {
   stroke: var(--crema);
-  /* trazo ligeramente irregular para look manuscrito */
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
-  max-width: 100%;
 }
 
-.palitoEmpty {
-  font-family: 'Oswald', sans-serif;
-  color: rgba(245,234,214,.2);
-  font-size: 1.4rem;
+.grupoBoxFull {
+  stroke: rgba(245, 234, 214, .65);
 }
 
 /* ── Botones de puntaje ─────────────────────────────────────────────────── */
 .botones {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
-  gap: 6px;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
 }
 
 .btnMas,
 .btnMenos {
   cursor: pointer;
   border-radius: 3px;
-  min-height: 44px;
+  min-height: 48px;
   font-family: 'Oswald', sans-serif;
-  font-size: .95rem;
+  font-size: 1.1rem;
   font-weight: 600;
   letter-spacing: .04em;
   transition: background .12s, transform .08s, box-shadow .12s;
@@ -378,24 +350,4 @@
 .btnReset:hover {
   background: var(--dorado);
   color: var(--tinta);
-}
-
-/* ── Mobile ─────────────────────────────────────────────────────────────── */
-@media (max-width: 560px) {
-  .tablero {
-    grid-template-columns: 1fr;
-  }
-
-  .cartelTitle {
-    font-size: 3rem;
-  }
-
-  .botones {
-    grid-template-columns: 1fr 1fr 1fr;
-  }
-
-  .panel {
-    outline-offset: -7px;
-    box-shadow: 0 0 0 7px var(--dorado), 0 4px 14px var(--shadow);
-  }
 }

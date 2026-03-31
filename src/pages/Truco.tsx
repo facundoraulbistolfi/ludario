@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import Topbar from '../components/Topbar'
 import styles from './Truco.module.css'
 
@@ -12,102 +12,72 @@ const DEFAULT_NAMES: Record<TeamKey, string> = {
   ellos: 'Ellos',
 }
 
-/* ── Palitos SVG ─────────────────────────────────────────────────────────── */
+/* ── Caja de un grupo de 5 palitos ───────────────────────────────────────── */
 
-function PalitosSvg({ count }: { count: number }) {
-  const groups = Math.floor(count / 5)
-  const loose = count % 5
-  const marks: JSX.Element[] = []
-  const W = 28   // ancho por palito individual
-  const GW = 28 * 5 + 14 // ancho de un grupo de 5
-  const H = 52
-  const PAD = 8
-
-  let x = PAD
-
-  for (let g = 0; g < groups; g++) {
-    const gx = x
-    // 4 palitos verticales
-    for (let i = 0; i < 4; i++) {
-      marks.push(
-        <line
-          key={`g${g}v${i}`}
-          x1={gx + i * W + 10}
-          y1={6}
-          x2={gx + i * W + 6}
-          y2={H - 6}
-          strokeWidth="3.5"
-          strokeLinecap="round"
-        />,
-      )
-    }
-    // tachón diagonal
-    marks.push(
-      <line
-        key={`g${g}d`}
-        x1={gx}
-        y1={H - 8}
-        x2={gx + 4 * W + 18}
-        y2={8}
-        strokeWidth="3.5"
-        strokeLinecap="round"
-      />,
-    )
-    x += GW + 20
-  }
-
-  for (let i = 0; i < loose; i++) {
-    marks.push(
-      <line
-        key={`l${i}`}
-        x1={x + i * W + 10}
-        y1={6}
-        x2={x + i * W + 6}
-        y2={H - 6}
-        strokeWidth="3.5"
-        strokeLinecap="round"
-      />,
-    )
-  }
-
-  const totalW = groups * (GW + 20) + (loose > 0 ? loose * W + PAD : 0) + PAD
-  const svgW = Math.max(totalW, 60)
-
-  if (count === 0) {
-    return <span className={styles.palitoEmpty}>—</span>
-  }
+function GrupoBox({ filled, active }: { filled: number; active: boolean }) {
+  const W = 48, H = 56, PAD = 9
+  const step = (W - PAD * 2) / 3.6
 
   return (
     <svg
-      className={styles.palitoSvg}
-      viewBox={`0 0 ${svgW} ${H}`}
-      width={svgW}
+      className={[
+        styles.grupoBox,
+        active ? styles.grupoBoxActive : '',
+        filled >= 5 ? styles.grupoBoxFull : '',
+      ].join(' ')}
+      viewBox={`0 0 ${W} ${H}`}
+      width={W}
       height={H}
-      aria-label={`${count} palitos`}
+      aria-label={`${filled} de 5`}
     >
-      {marks}
+      <rect x={4} y={4} width={W - 8} height={H - 8} rx={3} fill="none" strokeWidth="2.2" />
+      {Array.from({ length: Math.min(filled, 4) }, (_, i) => {
+        const x = PAD + i * step
+        return (
+          <line
+            key={`v${i}`}
+            x1={x + 3} y1={PAD - 2}
+            x2={x} y2={H - PAD + 2}
+            strokeWidth="2.5" strokeLinecap="round"
+          />
+        )
+      })}
+      {filled >= 5 && (
+        <line x1={3} y1={H - 5} x2={W - 3} y2={5} strokeWidth="2.5" strokeLinecap="round" />
+      )}
     </svg>
   )
 }
 
-/* ── Componente de segmento (malas / buenas) ─────────────────────────────── */
+/* ── Columna de palitos (malas + buenas) ─────────────────────────────────── */
 
-function Segmento({
-  label,
-  count,
-  isCurrent,
-}: {
-  label: string
-  count: number
-  isCurrent: boolean
-}) {
+function PalitosVertical({ score }: { score: number }) {
+  const enBuenas = score >= HALF_SCORE
+  const activeGroup = score < HALF_SCORE
+    ? Math.min(2, Math.floor(score / 5))
+    : 3 + Math.min(2, Math.floor((score - HALF_SCORE) / 5))
+
   return (
-    <div className={`${styles.segmento} ${isCurrent ? styles.segmentoActive : ''}`}>
-      <span className={styles.segmentoLabel}>{label}</span>
-      <div className={styles.palitoRow}>
-        <PalitosSvg count={count} />
+    <div className={styles.palitoVertical}>
+      <div className={`${styles.palitoSection} ${!enBuenas ? styles.palitoSectionActive : ''}`}>
+        {[0, 1, 2].map(g => (
+          <GrupoBox
+            key={g}
+            filled={Math.max(0, Math.min(5, score - g * 5))}
+            active={activeGroup === g}
+          />
+        ))}
       </div>
-      <span className={styles.segmentoCount}>{count}</span>
+      <div className={styles.sectionDivider} />
+      <div className={`${styles.palitoSection} ${enBuenas ? styles.palitoSectionActive : ''}`}>
+        {[0, 1, 2].map(g => (
+          <GrupoBox
+            key={g}
+            filled={Math.max(0, Math.min(5, score - HALF_SCORE - g * 5))}
+            active={activeGroup === 3 + g}
+          />
+        ))}
+      </div>
     </div>
   )
 }
@@ -132,15 +102,14 @@ export default function Truco() {
   const [names, setNames] = useState<Record<TeamKey, string>>(DEFAULT_NAMES)
   const [scores, setScores] = useState<Record<TeamKey, number>>({ nosotros: 0, ellos: 0 })
 
-  const winner = useMemo<TeamKey | null>(() => {
-    if (scores.nosotros >= MAX_SCORE) return 'nosotros'
-    if (scores.ellos >= MAX_SCORE) return 'ellos'
-    return null
-  }, [scores])
+  const winner: TeamKey | null =
+    scores.nosotros >= MAX_SCORE ? 'nosotros' :
+    scores.ellos >= MAX_SCORE ? 'ellos' :
+    null
 
-  function add(team: TeamKey, pts: number) {
+  function add(team: TeamKey) {
     if (winner) return
-    setScores(prev => ({ ...prev, [team]: Math.min(MAX_SCORE, prev[team] + pts) }))
+    setScores(prev => ({ ...prev, [team]: Math.min(MAX_SCORE, prev[team] + 1) }))
   }
 
   function sub(team: TeamKey) {
@@ -153,10 +122,6 @@ export default function Truco() {
     setNames(DEFAULT_NAMES)
   }
 
-  const malas = (k: TeamKey) => Math.min(scores[k], HALF_SCORE)
-  const buenas = (k: TeamKey) => Math.max(0, scores[k] - HALF_SCORE)
-  const enBuenas = (k: TeamKey) => scores[k] >= HALF_SCORE
-
   const TEAMS: TeamKey[] = ['nosotros', 'ellos']
 
   return (
@@ -164,14 +129,11 @@ export default function Truco() {
       <main className="page">
         <Topbar label="Truco" sublabel="Buenas y malas" />
 
-        {/* ── Cartel principal ── */}
+        {/* ── Cartel ── */}
         <header className={styles.cartel}>
           <Ornamento className={styles.ornTop} />
           <p className={styles.cartelEyebrow}>Anotador Criollo</p>
           <h1 className={styles.cartelTitle}>Truco</h1>
-          <p className={styles.cartelSub}>
-            Malas: 0 – 14 &nbsp;·&nbsp; Buenas: 15 – 29 &nbsp;·&nbsp; Gana el primero en llegar a 30
-          </p>
           <Ornamento className={styles.ornBottom} />
         </header>
 
@@ -192,29 +154,19 @@ export default function Truco() {
                 <span className={styles.nombreUnderline} aria-hidden="true" />
               </div>
 
-              {/* puntaje total */}
+              {/* puntaje */}
               <div className={styles.puntajeWrap}>
                 <span className={styles.puntaje}>{scores[k]}</span>
                 <span className={styles.puntajeDe}>/30</span>
               </div>
 
-              {/* segmentos */}
-              <div className={styles.segmentos}>
-                <Segmento label="Malas" count={malas(k)} isCurrent={!enBuenas(k)} />
-                <div className={styles.segmentoDiv} aria-hidden="true" />
-                <Segmento label="Buenas" count={buenas(k)} isCurrent={enBuenas(k)} />
-              </div>
+              {/* palitos verticales */}
+              <PalitosVertical score={scores[k]} />
 
               {/* botones */}
               <div className={styles.botones} role="group" aria-label={`Puntos para ${names[k]}`}>
-                <button className={styles.btnMenos} onClick={() => sub(k)} aria-label="Restar 1">
-                  −1
-                </button>
-                {[1, 2, 3, 4].map(n => (
-                  <button key={n} className={styles.btnMas} onClick={() => add(k, n)}>
-                    +{n}
-                  </button>
-                ))}
+                <button className={styles.btnMenos} onClick={() => sub(k)} aria-label="Restar 1">−1</button>
+                <button className={styles.btnMas} onClick={() => add(k)} aria-label="Sumar 1">+1</button>
               </div>
 
               {/* corona ganador */}
