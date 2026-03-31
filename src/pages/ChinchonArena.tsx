@@ -692,6 +692,86 @@ PREGUNTAS:
 3. ¿Hay algún escenario donde la estrategia del bot perdedor sea superior?`;
 }
 
+function generateNewBotPrompt(simContext?: string) {
+const schema = `{
+  "name": string,         // 1–12 caracteres
+  "emoji": string,        // UNO de: 🧪 ⚡ 🎲 💎 🦾 🧠 🔥 🤡 🎯 🎭 🚀 💀 👻 🕷️ 🍀 🌟 👑 🐉 🦊 🦁 🌊 🏆 🌋 🛡️ 🎪 🎸 🦈 🦋 🌈 🎩 🔱 🌀
+  "colorIdx": number,     // entero 0–7
+  "description": string,  // hasta 120 caracteres, descripción de la estrategia
+  "draw": {
+    "mode": "always_deck" | "smart" | "aggressive",
+    //   always_deck → nunca roba del descarte
+    //   smart       → roba del descarte solo si reduce el resto en más de restoThreshold puntos
+    //   aggressive  → roba del descarte ante cualquier mejora de resto
+    "restoThreshold": number  // 1–10; solo relevante si mode = "smart"
+  },
+  "discard": {
+    "mode": "default" | "high_rank" | "optimal"
+    //   default    → descarta la carta suelta con mayor valor en puntos
+    //   high_rank  → descarta la carta con número más alto, incluso si está en meld parcial
+    //   optimal    → evalúa los 8 posibles descartes y elige el que deja la mejor mano (más inteligente)
+  },
+  "cut": {
+    "maxFree": 0 | 1,         // 0 = solo corta sin cartas sueltas; 1 = tolera hasta 1 carta suelta
+    "baseResto": number,       // 0–5; umbral de resto máximo para cortar (si useScoreRules = false)
+    "useScoreRules": boolean,  // true = usa scoreRules en lugar de baseResto
+    "scoreRules": [            // exactamente 4 entradas fijas, una por rango de puntaje propio
+      { "minScore": 0,  "maxResto": number },   // cuando tengo 0–24 puntos
+      { "minScore": 25, "maxResto": number },   // cuando tengo 25–49 puntos
+      { "minScore": 50, "maxResto": number },   // cuando tengo 50–74 puntos
+      { "minScore": 75, "maxResto": number }    // cuando tengo 75+ puntos (cerca del límite)
+    ],
+    "pursueChinchon": boolean,     // true = cuando está cerca del chinchón, solo corta con mano perfecta
+    "chinchonThreshold": 5 | 6,    // 6 = le faltan 1–2 cartas; 5 = activa antes (más ambicioso)
+    "chinchonRunMode": boolean      // true = con corrida de 4+ cartas del mismo palo, espera el chinchón
+  }
+}`;
+
+const example = `{
+  "name": "EjemploBot",
+  "emoji": "🧠",
+  "colorIdx": 1,
+  "description": "Equilibrado: roba del descarte cuando conviene y ajusta el umbral de corte según el marcador.",
+  "draw": { "mode": "smart", "restoThreshold": 3 },
+  "discard": { "mode": "default" },
+  "cut": {
+    "maxFree": 1,
+    "baseResto": 4,
+    "useScoreRules": true,
+    "scoreRules": [
+      { "minScore": 0,  "maxResto": 4 },
+      { "minScore": 25, "maxResto": 3 },
+      { "minScore": 50, "maxResto": 2 },
+      { "minScore": 75, "maxResto": 1 }
+    ],
+    "pursueChinchon": false,
+    "chinchonThreshold": 6,
+    "chinchonRunMode": false
+  }
+}`;
+
+return `Sos un experto en estrategia de Chinchón con baraja española (50 cartas, 2 comodines).
+
+OBJETIVO: Diseñá un nuevo bot de Chinchón con una estrategia original y competitiva.
+${simContext ? "Usá el contexto de simulación al final de este mensaje como guía para mejorar los bots analizados o crear uno que cubra sus debilidades." : "Pensá en una estrategia diferenciada: podés ser agresivo, defensivo, adaptativo, o especializado en chinchón."}
+
+REGLAS CLAVE DEL JUEGO:
+- 7 cartas por jugador. Turno: roba del mazo o del descarte, luego descarta 1.
+- Melds válidos: escalera de 3–7 cartas del mismo palo, o trío/cuarteto del mismo n��mero.
+- Para cortar: resto (suma de valores de cartas sueltas fuera de melds) ≤ 5 y máx 1 carta suelta.
+- Corte con todas las cartas en melds: el cortador suma −10 puntos.
+- Chinchón: 7 cartas consecutivas del mismo palo (sin comodines) → victoria instantánea.
+- Se elimina al llegar a 100 puntos. El perdedor de cada ronda suma el resto del cortador.
+
+ESQUEMA JSON (único formato válido para importar el bot):
+${schema}
+
+EJEMPLO DE JSON VÁLIDO:
+${example}
+${simContext ? `\nCONTEXTO DE SIMULACIÓN PREVIA:\n${simContext}` : ""}
+INSTRUCCIÓN FINAL: Respondé ÚNICAMENTE con el JSON del nuevo bot. Sin texto antes, sin texto después, sin bloques de código markdown (no uses \`\`\`json). Solo el objeto JSON puro.`;
+}
+
 function getBotConfig(idx, customConfigs) {
 if (idx < BUILTIN_BOT_CONFIGS.length) return BUILTIN_BOT_CONFIGS[idx];
 return customConfigs[idx - BUILTIN_BOT_CONFIGS.length] ?? BUILTIN_BOT_CONFIGS[0];
@@ -1239,6 +1319,7 @@ const [chinchonWins, setChinchonWins] = useState([0, 0]);
 const [simRun, setSimRun] = useState(false);
 const [prog, setProg] = useState(0);
 const [promptCopied, setPromptCopied] = useState(false);
+const [newBotPromptCopied, setNewBotPromptCopied] = useState(false);
 const [chartTab, setChartTab] = useState<"winrate" | "sweep">("winrate");
 const [chartZoom, setChartZoom] = useState<number | null>(null);
 const stopRef = useRef(false);
@@ -1633,8 +1714,8 @@ return (
         </div>
       )}
 
-      {total > 0 && (
-        <div className="w-full flex justify-center mb-4">
+      <div className="w-full flex flex-col items-center gap-2 mb-4">
+        {total > 0 && (
           <button onClick={() => {
             const prompt = generateSimPrompt(
               getBotConfig(simB0, customConfigs),
@@ -1645,10 +1726,23 @@ return (
             setPromptCopied(true);
             setTimeout(() => setPromptCopied(false), 3000);
           }} className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-gray-500 text-gray-300 hover:text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors active:scale-95">
-            {promptCopied ? "✓ Prompt copiado al portapapeles" : "🤖 Exportar prompt para LLM"}
+            {promptCopied ? "✓ Copiado" : "🤖 Analizar resultados con LLM"}
           </button>
-        </div>
-      )}
+        )}
+        <button onClick={() => {
+          const simContext = total > 0 ? generateSimPrompt(
+            getBotConfig(simB0, customConfigs),
+            getBotConfig(simB1, customConfigs),
+            { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numGames }
+          ) : undefined;
+          navigator.clipboard.writeText(generateNewBotPrompt(simContext));
+          setNewBotPromptCopied(true);
+          setTimeout(() => setNewBotPromptCopied(false), 3000);
+        }} className="flex items-center gap-2 bg-violet-900 hover:bg-violet-800 border border-violet-700 hover:border-violet-500 text-violet-200 hover:text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors active:scale-95">
+          {newBotPromptCopied ? "✓ Copiado" : "🧬 Generar nuevo bot con LLM"}
+        </button>
+        {total > 0 && <p className="text-xs text-gray-600 text-center">Usá ambos prompts juntos: primero el análisis, después el generador</p>}
+      </div>
 
       {!chartData && !simRun && <div className="text-gray-600 mt-6 text-sm">Elegí los bots y dale a <span className="text-emerald-500">Simular</span></div>}
     </div>
