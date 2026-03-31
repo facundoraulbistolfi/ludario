@@ -38,33 +38,38 @@ npm run test:watch # correr tests en modo watch (desarrollo)
 ```
 tabletop-helper/
 ├── public/
-│   └── .nojekyll             # evita que GitHub Pages procese con Jekyll
+│   └── .nojekyll                  # evita que GitHub Pages procese con Jekyll
 ├── src/
-│   ├── main.tsx              # entrypoint: monta React + HashRouter
-│   ├── App.tsx               # definición de rutas
-│   ├── vite-env.d.ts         # tipos de Vite (CSS modules, etc.)
+│   ├── main.tsx                   # entrypoint: monta React + HashRouter
+│   ├── App.tsx                    # definición de rutas
+│   ├── vite-env.d.ts              # tipos de Vite (CSS modules, etc.)
 │   ├── styles/
-│   │   └── site.css          # estilos globales: topbar, cards, hero, layout
+│   │   └── site.css               # estilos globales: topbar, cards, hero, layout
 │   ├── components/
-│   │   └── Topbar.tsx        # nav compartida, filtra el link de la página actual
+│   │   └── Topbar.tsx             # nav compartida, filtra el link de la página actual
 │   ├── lib/
 │   │   ├── sudoku-killer.ts       # lógica pura del solver (testeable)
 │   │   └── sudoku-killer.test.ts  # tests de la lógica del solver
 │   └── pages/
-│       ├── Home.tsx                    # landing con cards de las tools
-│       ├── SudokuKiller.tsx            # solver de cages para Killer Sudoku
+│       ├── Home.tsx               # landing con cards de las tools
+│       ├── SudokuKiller.tsx       # solver de cages para Killer Sudoku
 │       ├── SudokuKiller.module.css
-│       ├── Chinchon.tsx               # anotador de puntajes para Chinchón
-│       └── Chinchon.module.css
-├── index.html                # entrypoint HTML de Vite
-├── vite.config.ts            # base: '/tabletop-helper/' para GitHub Pages
-├── tsconfig.json             # referencias a tsconfig.app.json y tsconfig.node.json
-├── tsconfig.app.json         # config TS para src/ (strict, noUnusedLocals, etc.)
-├── tsconfig.node.json        # config TS para vite.config.ts
+│       ├── Chinchon.tsx           # anotador de puntajes para Chinchón
+│       ├── Chinchon.module.css
+│       ├── Truco.tsx              # anotador de truco (buenas/malas)
+│       ├── Truco.module.css
+│       ├── ChinchonArena.tsx      # arena de bots y modo de juego interactivo
+│       ├── PacmanMemory.tsx       # memoria temática retro para 2–3 jugadores
+│       └── PacmanLudo.tsx         # ludo temático de Pac-Man para 2–4 jugadores
+├── index.html                     # entrypoint HTML de Vite
+├── vite.config.ts                 # base: '/tabletop-helper/' para GitHub Pages
+├── tsconfig.json                  # referencias a tsconfig.app.json y tsconfig.node.json
+├── tsconfig.app.json              # config TS para src/ (strict, noUnusedLocals, etc.)
+├── tsconfig.node.json             # config TS para vite.config.ts
 └── .github/
     └── workflows/
-        ├── ci.yml        # PR check: tests + build (se dispara en PRs y pushes a ramas)
-        └── deploy.yml    # deploy: build → upload dist/ → GitHub Pages (solo en main)
+        ├── ci.yml                 # PR check: tests + build (PRs y pushes a ramas)
+        └── deploy.yml             # deploy: build → upload dist/ → GitHub Pages (solo main)
 ```
 
 ---
@@ -78,6 +83,10 @@ Usa **HashRouter**, por lo que las URLs tienen `#`:
 | `/#/` | Home — landing con las tools |
 | `/#/tools/sudoku-killer` | Sudoku Killer |
 | `/#/tools/chinchon` | Anotador de Chinchón |
+| `/#/tools/truco` | Anotador de Truco |
+| `/#/tools/chinchon-arena` | Chinchón Arena |
+| `/#/tools/pacman-memory` | Pac-Memory |
+| `/#/tools/pacman-ludo` | Pac-Ludo |
 
 HashRouter no requiere configuración de servidor, funciona en GitHub Pages sin 404.html.
 
@@ -87,13 +96,13 @@ HashRouter no requiere configuración de servidor, funciona en GitHub Pages sin 
 
 - **`src/styles/site.css`** — estilos globales importados una sola vez en `main.tsx`. Contiene: topbar, brand, nav links, hero, cards, chips, layout (`.page`, `.grid`). Usa variables CSS (`--accent`, `--border`, `--muted`, etc.).
 - **`src/pages/*.module.css`** — CSS Modules por tool. Se importan como `import styles from './Tool.module.css'` y se usan como `className={styles.panel}`. Evitan colisiones de nombres entre tools.
-- Cada tool tiene su propio tema visual: Sudoku Killer usa fondo negro + `IBM Plex Mono`; Chinchón usa fondo verde + `Playfair Display`.
+- Cada tool tiene su propio tema visual: Sudoku Killer usa fondo negro + `IBM Plex Mono`; Chinchón usa fondo verde + `Playfair Display`; Truco usa fondo inspirado en mesa de cartas.
 
 ---
 
 ## Convenciones
 
-- **Un archivo por page** en `src/pages/`. Si la page crece, crear subcarpeta `src/pages/sudoku-killer/` con `index.tsx` + componentes internos.
+- **Un archivo por page** en `src/pages/`. Si la page crece, crear subcarpeta `src/pages/<tool>/` con `index.tsx` + componentes internos.
 - **Componentes compartidos** en `src/components/`.
 - **Lógica pura en `src/lib/`** — funciones sin dependencias de React, fáciles de testear unitariamente.
 - **Sin lógica de negocio en el CSS** — toda la lógica en TSX, los estilos sólo presentación.
@@ -158,3 +167,10 @@ Scoreboard para el juego de cartas Chinchón. Lógica:
 - `addRound()` procesa los puntajes, actualiza eliminados, avanza el dealer.
 - Estado de partida serializable a JSON (`copyState` / `applyLoad`) para persistencia manual via clipboard.
 - Componente `LoadBox` separado dentro del mismo archivo para el panel de carga.
+
+### Anotador de Truco (`src/pages/Truco.tsx`)
+
+Marcador de truco entre dos equipos con estado persistente local:
+- Tanteador visual de palitos con separación entre malas y buenas.
+- Cambio de turno de mano, control de objetivo de puntos y reset rápido de partida.
+- Persistencia en `localStorage` para continuar partidas entre recargas.
