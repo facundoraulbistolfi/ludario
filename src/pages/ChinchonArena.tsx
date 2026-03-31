@@ -1324,6 +1324,14 @@ const [chartTab, setChartTab] = useState<"winrate" | "sweep">("winrate");
 const [chartZoom, setChartZoom] = useState<number | null>(null);
 const stopRef = useRef(false);
 
+// Tournament
+const [tourBots, setTourBots] = useState([0, 1, 2, 3]);
+const [tourResults, setTourResults] = useState(null);
+const [tourRunning, setTourRunning] = useState(false);
+const [tourProgress, setTourProgress] = useState(0);
+const [tourCurrentPair, setTourCurrentPair] = useState(null);
+const stopTourRef = useRef(false);
+
 // Match viewer
 const [mvB0, setMvB0] = useState(0);
 const [mvB1, setMvB1] = useState(1);
@@ -1435,6 +1443,63 @@ if (isStable()) { setSimRun(false); setProg(100); } else setTimeout(tick, 0);
 setTimeout(tick, 0);
 }, [simB0, simB1]);
 
+const runTournament = useCallback(() => {
+if (new Set(tourBots).size < 4) return;
+stopTourRef.current = false;
+setTourRunning(true);
+setTourProgress(0);
+setTourCurrentPair(0);
+setTourResults(null);
+
+const n = 4;
+const pairs = [];
+for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) pairs.push([i, j]);
+
+const wins = Array.from({ length: n }, () => Array(n).fill(0));
+const gamesPlayed = Array.from({ length: n }, () => Array(n).fill(0));
+
+const STABLE_WINDOW = 20, STABLE_THRESHOLD = 0.3, MIN_BATCHES = 200, BATCH = 20;
+let pairIdx = 0, batchesDone = 0, currentWins = 0, currentTotal = 0;
+const winSnapshots = [];
+
+const isStablePair = () => {
+  if (winSnapshots.length < STABLE_WINDOW || batchesDone < MIN_BATCHES) return false;
+  const recent = winSnapshots.slice(-STABLE_WINDOW);
+  const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
+  const stddev = Math.sqrt(recent.reduce((a, b) => a + (b - mean) ** 2, 0) / recent.length);
+  return stddev < STABLE_THRESHOLD;
+};
+
+const tick = () => {
+  if (stopTourRef.current) { setTourRunning(false); return; }
+  const [ai, bi] = pairs[pairIdx];
+  const globalA = tourBots[ai], globalB = tourBots[bi];
+  for (let i = 0; i < BATCH; i++) {
+    const [gA, gB] = simulateGamePair(globalA, globalB);
+    const wA = (gA.gameLoser === 1 ? 1 : 0) + (gB.gameLoser === 1 ? 1 : 0);
+    wins[ai][bi] += wA;
+    gamesPlayed[ai][bi] += 2;
+    currentWins += wA;
+    currentTotal += 2;
+  }
+  batchesDone++;
+  winSnapshots.push(currentTotal > 0 ? (currentWins / currentTotal) * 100 : 50);
+  const stable = isStablePair();
+  const fraction = stable ? 1 : Math.min(batchesDone / MIN_BATCHES, 0.99);
+  setTourProgress(Math.min(99, Math.round(((pairIdx + fraction) / pairs.length) * 100)));
+  setTourCurrentPair(pairIdx);
+  setTourResults({ wins: wins.map(r => [...r]), games: gamesPlayed.map(r => [...r]) });
+  if (stable) {
+    pairIdx++;
+    batchesDone = 0; currentWins = 0; currentTotal = 0; winSnapshots.length = 0;
+    if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); return; }
+    setTourCurrentPair(pairIdx);
+  }
+  setTimeout(tick, 0);
+};
+setTimeout(tick, 0);
+}, [tourBots]);
+
 // -- Match viewer --
 const replay = replayPair ? (matchRound === "A" ? replayPair.replayA : replayPair.replayB) : null;
 const matchSwapped = matchRound === "B";
@@ -1542,7 +1607,7 @@ return (
 <p className="text-gray-600 text-xs mb-3">Baraja de 50 cartas (incluye 2 comodines) · {BOT.length} bots</p>
 
   <div className="flex gap-0.5 bg-gray-900 rounded-lg p-1 mb-4">
-    {[["sim", "Simulación"], ["match", "Ver Partida"], ["play", "Jugar"], ["custom", "Bots"], ["reglas", "Reglas"]].map(([k, l]) => (
+    {[["sim", "Simulación"], ["torneo", "Torneo"], ["match", "Ver Partida"], ["play", "Jugar"], ["custom", "Bots"], ["reglas", "Reglas"]].map(([k, l]) => (
       <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>{l}</button>
     ))}
   </div>
@@ -1851,6 +1916,199 @@ return (
       )}
     </div>
   )}
+
+  {/* --- TORNEO --- */}
+  {tab === "torneo" && (() => {
+    const TOUR_N = 4;
+    const tourPairs = [];
+    for (let i = 0; i < TOUR_N; i++) for (let j = i + 1; j < TOUR_N; j++) tourPairs.push([i, j]);
+
+    const getBotWins = (ai) => {
+      if (!tourResults) return { wins: 0, games: 0 };
+      let totalW = 0, totalG = 0;
+      for (let j = 0; j < TOUR_N; j++) {
+        if (j === ai) continue;
+        if (j > ai) { totalW += tourResults.wins[ai][j]; totalG += tourResults.games[ai][j]; }
+        else { totalW += tourResults.games[j][ai] - tourResults.wins[j][ai]; totalG += tourResults.games[j][ai]; }
+      }
+      return { wins: totalW, games: totalG };
+    };
+
+    const ranking = [0, 1, 2, 3].map(ai => {
+      const { wins: w, games: g } = getBotWins(ai);
+      return { idx: ai, winPct: g > 0 ? (w / g) * 100 : 0, games: g };
+    }).sort((a, b) => b.winPct - a.winPct);
+
+    const isDone = !tourRunning && tourProgress === 100 && tourResults !== null;
+    const medals = ["🥇", "🥈", "🥉", "4️⃣"];
+
+    return (
+      <div className="flex flex-col items-center w-full max-w-2xl">
+        <h2 className="text-sm font-semibold text-gray-200 mb-1">Torneo todos contra todos</h2>
+        <p className="text-xs text-gray-600 mb-4 text-center">6 enfrentamientos auto-estabilizados · Determina el mejor bot de los 4 elegidos</p>
+
+        {/* Bot selection 2×2 */}
+        <div className="grid grid-cols-2 gap-2 w-full mb-4">
+          {[0, 1, 2, 3].map(slot => {
+            const selBot = BOT[tourBots[slot]];
+            return (
+              <div key={slot} className="bg-gray-900 rounded-lg p-2.5 border border-gray-800">
+                <div className="text-xs text-gray-500 mb-1.5">Bot {slot + 1}</div>
+                <div className="flex flex-wrap gap-1">
+                  {BOT.map((b, bi) => {
+                    const taken = tourBots.some((tb, s) => s !== slot && tb === bi);
+                    return (
+                      <button key={bi} disabled={taken || tourRunning}
+                        onClick={() => setTourBots(prev => { const next = [...prev]; next[slot] = bi; return next; })}
+                        className={`px-2 py-1 rounded text-xs border transition-all disabled:cursor-not-allowed ${tourBots[slot] === bi ? "border-2 scale-105" : `border-gray-700 ${taken ? "opacity-20" : "hover:border-gray-500"}`}`}
+                        style={tourBots[slot] === bi ? { borderColor: b.color, color: b.color, background: `${b.color}15` } : { color: taken ? "#333" : b.color }}>
+                        {b.emoji} {b.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Selected bots summary */}
+        <div className="flex gap-2 flex-wrap justify-center mb-4">
+          {[0, 1, 2, 3].map(slot => {
+            const b = BOT[tourBots[slot]];
+            return (
+              <div key={slot} className="text-xs px-2.5 py-1 rounded-full border" style={{ borderColor: b.color + "60", color: b.color }}>
+                {b.emoji} {b.name}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Start/Stop */}
+        {!tourRunning ? (
+          <button onClick={runTournament}
+            className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-2 rounded-lg text-sm font-bold mb-3 active:scale-95 transition-all">
+            🏆 Iniciar torneo auto-estabilizado
+          </button>
+        ) : (
+          <button onClick={() => { stopTourRef.current = true; }}
+            className="bg-red-600 hover:bg-red-500 text-white px-5 py-2 rounded-lg text-sm font-bold mb-3">
+            Parar ({tourProgress}%)
+          </button>
+        )}
+
+        {/* Progress bar */}
+        {(tourRunning || (tourProgress > 0 && tourProgress < 100)) && (
+          <div className="w-full h-1.5 bg-gray-800 rounded-full mb-2 overflow-hidden">
+            <div className="h-full bg-gradient-to-r from-amber-500 to-orange-500 transition-all"
+              style={{ width: `${tourProgress}%` }} />
+          </div>
+        )}
+
+        {/* Current matchup status */}
+        {tourRunning && tourCurrentPair !== null && (
+          <div className="text-xs text-gray-500 mb-3 text-center">
+            Corriendo enfrentamiento {tourCurrentPair + 1} de {tourPairs.length}:{" "}
+            <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][0]]].color }}>
+              {BOT[tourBots[tourPairs[tourCurrentPair][0]]].emoji} {BOT[tourBots[tourPairs[tourCurrentPair][0]]].name}
+            </span>
+            {" vs "}
+            <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>
+              {BOT[tourBots[tourPairs[tourCurrentPair][1]]].emoji} {BOT[tourBots[tourPairs[tourCurrentPair][1]]].name}
+            </span>
+          </div>
+        )}
+
+        {tourResults && (
+          <>
+            {/* Results matrix */}
+            <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 overflow-x-auto">
+              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">Matriz de resultados (% victorias fila vs columna)</h3>
+              <table className="w-full text-xs min-w-[320px]">
+                <thead>
+                  <tr>
+                    <th className="text-gray-600 text-left py-1 pr-3 font-normal w-24">Bot</th>
+                    {[0, 1, 2, 3].map(j => {
+                      const b = BOT[tourBots[j]];
+                      return <th key={j} className="text-center px-2 py-1 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</th>;
+                    })}
+                    <th className="text-center px-2 py-1 text-gray-400 font-medium">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[0, 1, 2, 3].map(ai => {
+                    const b = BOT[tourBots[ai]];
+                    const { wins: totalW, games: totalG } = getBotWins(ai);
+                    const winPct = totalG > 0 ? (totalW / totalG) * 100 : null;
+                    return (
+                      <tr key={ai} className="border-t border-gray-800">
+                        <td className="py-2 pr-3 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</td>
+                        {[0, 1, 2, 3].map(j => {
+                          if (j === ai) return <td key={j} className="text-center text-gray-700 py-2">—</td>;
+                          let w, g;
+                          if (j > ai) { w = tourResults.wins[ai][j]; g = tourResults.games[ai][j]; }
+                          else { w = tourResults.games[j][ai] - tourResults.wins[j][ai]; g = tourResults.games[j][ai]; }
+                          if (g === 0) return <td key={j} className="text-center text-gray-600 py-2">...</td>;
+                          const pct = (w / g) * 100;
+                          const col = pct >= 55 ? "#22c55e" : pct >= 47 ? "#9ca3af" : "#f87171";
+                          return <td key={j} className="text-center py-2 font-mono" style={{ color: col }}>{pct.toFixed(1)}%</td>;
+                        })}
+                        <td className="text-center py-2 font-bold font-mono">
+                          {winPct !== null
+                            ? <span style={{ color: b.color }}>{winPct.toFixed(2)}%</span>
+                            : <span className="text-gray-600">...</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Ranking / Podium */}
+            <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4">
+              {isDone && (
+                <div className="text-center mb-5">
+                  <div className="text-5xl mb-2">{BOT[tourBots[ranking[0].idx]].emoji}</div>
+                  <div className="text-xl font-extrabold" style={{ color: BOT[tourBots[ranking[0].idx]].color }}>
+                    {BOT[tourBots[ranking[0].idx]].name}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    🏆 Mejor bot · {ranking[0].winPct.toFixed(2)}% de victorias globales
+                  </div>
+                </div>
+              )}
+              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">
+                {isDone ? "Clasificación final" : "Clasificación parcial"}
+              </h3>
+              <div className="flex flex-col gap-2.5">
+                {ranking.map((r, pos) => {
+                  const bot = BOT[tourBots[r.idx]];
+                  const barW = r.games > 0 ? Math.max(2, Math.min(100, r.winPct * 2 - 50)) : 2;
+                  return (
+                    <div key={r.idx} className="flex items-center gap-2">
+                      <span className="text-base w-7 text-center shrink-0">{medals[pos]}</span>
+                      <span className="w-28 text-xs font-semibold shrink-0" style={{ color: bot.color }}>{bot.emoji} {bot.name}</span>
+                      <div className="flex-1 h-5 bg-gray-800 rounded overflow-hidden">
+                        <div className="h-full rounded transition-all duration-300"
+                          style={{ width: `${barW}%`, background: bot.color + "99" }} />
+                      </div>
+                      <span className="text-xs font-mono w-16 text-right shrink-0" style={{ color: bot.color }}>
+                        {r.games > 0 ? `${r.winPct.toFixed(2)}%` : "..."}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {!isDone && tourRunning && (
+                <p className="text-xs text-gray-600 text-center mt-3">Resultados parciales — el torneo sigue corriendo</p>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  })()}
 
   {/* --- REGLAS --- */}
   {tab === "reglas" && (
