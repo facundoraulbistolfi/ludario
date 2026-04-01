@@ -9,6 +9,21 @@ import {
   legalDiscardIndex, cutScore,
   shouldDrawDiscard, playRoundScored,
 } from "../lib/chinchon-bot-game";
+import {
+  MIN_SIMULATIONS_BEFORE_STABLE_STOP,
+  STABLE_SIMULATION_STREAK,
+  getChinchonWinRate,
+  getNextStableStreak,
+  getTruncatedWinRates,
+  getWinRates,
+} from "../lib/chinchon-sim-metrics";
+import {
+  TOURNAMENT_FIXTURE,
+  TOURNAMENT_FIXTURE_BY_FECHA,
+  buildTournamentMatchSnapshot,
+  buildTournamentCeremonyData,
+  createEmptyTournamentResults,
+} from "../lib/chinchon-tournament";
 
 /* ==============================================================
 CARD ENGINE (UI-only constants)
@@ -120,6 +135,7 @@ const CUSTOM_COLORS = [
 { color: "#a3e635", text: "text-lime-400", bg: "bg-lime-950", border: "border-lime-800" },
 { color: "#c084fc", text: "text-purple-400", bg: "bg-purple-950", border: "border-purple-800" },
 ];
+const MAX_CUSTOM_BOTS = 8;
 const DEFAULT_SCORE_RULES = () => [{ minScore: 0, maxResto: 5 }, { minScore: 25, maxResto: 3 }, { minScore: 50, maxResto: 2 }, { minScore: 75, maxResto: 1 }];
 const DEFAULT_CUSTOM_CONFIG = () => ({
 id: "custom-" + Date.now(),
@@ -218,8 +234,9 @@ localStorage.getItem("chinchon-lab-custom-bots")
 ?? localStorage.getItem("chinchon-arena-custom-bots")
 ?? "[]"
 );
+if (!Array.isArray(configs)) return [];
 // Clamp resto values to the legal game maximum of 5
-return configs.map(cfg => ({
+return configs.slice(0, MAX_CUSTOM_BOTS).map(cfg => ({
 ...cfg,
 cut: {
 ...cfg.cut,
@@ -230,7 +247,9 @@ scoreRules: (cfg.cut?.scoreRules ?? []).map(r => ({ ...r, maxResto: Math.min(r.m
 } catch { return []; }
 }
 function saveCustomConfigs(configs) {
-localStorage.setItem("chinchon-lab-custom-bots", JSON.stringify(configs));
+const safeConfigs = configs.slice(0, MAX_CUSTOM_BOTS);
+localStorage.setItem("chinchon-lab-custom-bots", JSON.stringify(safeConfigs));
+localStorage.setItem("chinchon-arena-custom-bots", JSON.stringify(safeConfigs));
 }
 
 const BUILTIN_BOT_CONFIGS = [
@@ -570,6 +589,8 @@ boxShadow: isActive ? `0 0 0 1px ${botB.color}` : "none",
 );
 }
 
+const createEmptyTourMatchSnapshots = () => TOURNAMENT_FIXTURE.map(() => null);
+
 /* -- Shared line chart for rate evolution (winrate + sweep) -- */
 function RateChart({ data, bot0, bot1 }: { data: {x: number, y0: number, y1: number}[], bot0: any, bot1: any }) {
 const W = 500, H = 140;
@@ -662,7 +683,7 @@ function generateSimPrompt(cfg0, cfg1, metrics) {
 const { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numSims } = metrics;
 const total = gameWins[0] + gameWins[1];
 const totalPairs = sweepWins[0] + sweepWins[1] + sweepWins[2];
-return `Tengo dos bots de Chinchón (baraja española de 50 cartas, incluyendo 2 comodines) que corrieron ${numSims} simulaciones. Cada simulación es un par de partidas espejo (misma repartida, manos invertidas), dando ${total} partidas totales.
+return `Tengo dos bots de Chinchón (baraja española de 50 cartas, incluyendo 2 comodines) que corrieron ${totalPairs} simulaciones${totalPairs < numSims ? ` (corte antes del máximo configurado de ${numSims})` : ""}. Cada simulación es un par de partidas espejo (misma repartida, manos invertidas), dando ${total} partidas totales.
 
 REGLAS RELEVANTES:
 - 7 cartas por jugador. En su turno: roba del mazo o descarte, luego descarta 1.
@@ -679,12 +700,12 @@ ${botConfigToPromptText(cfg0)}
 BOT 2:
 ${botConfigToPromptText(cfg1)}
 
-RESULTADOS (${numSims} simulaciones = ${total} partidas totales):
+RESULTADOS (${totalPairs} simulaciones = ${total} partidas totales):
 - Partidas ganadas: ${cfg0.emoji} ${cfg0.name} ${gameWins[0]} (${((gameWins[0]/total)*100).toFixed(1)}%) vs ${cfg1.emoji} ${cfg1.name} ${gameWins[1]} (${((gameWins[1]/total)*100).toFixed(1)}%)
 - Rondas ganadas: ${cfg0.name} ${roundWins[0]} (${((roundWins[0]/totalRounds)*100).toFixed(1)}%) vs ${cfg1.name} ${roundWins[1]} (${((roundWins[1]/totalRounds)*100).toFixed(1)}%) — ${totalRounds} rondas totales
 - Promedio de rondas por partida: ${(totalRounds / total).toFixed(1)}
 - Doble espejo (gana ambas con misma repartida): ${cfg0.name} ${sweepWins[0]} (${((sweepWins[0]/totalPairs)*100).toFixed(1)}%), ${cfg1.name} ${sweepWins[1]} (${((sweepWins[1]/totalPairs)*100).toFixed(1)}%), empates ${sweepWins[2]}
-- Chinchones: ${cfg0.name} ${chinchonWins[0]} vs ${cfg1.name} ${chinchonWins[1]}
+- Chinchones: ${cfg0.name} ${chinchonWins[0]} (${getChinchonWinRate(chinchonWins[0], gameWins[0]).toFixed(1)}% de sus victorias) vs ${cfg1.name} ${chinchonWins[1]} (${getChinchonWinRate(chinchonWins[1], gameWins[1]).toFixed(1)}% de sus victorias)
 
 PREGUNTAS:
 1. ¿Por qué creés que el bot ganador tuvo esa ventaja? Explicá en términos de las mecánicas del juego.
@@ -1313,7 +1334,7 @@ const [roundWins, setRoundWins] = useState([0, 0]);
 const [gameWins, setGameWins] = useState([0, 0]);
 const [sweepWins, setSweepWins] = useState([0, 0, 0]); // [bot0 sweeps, bot1 sweeps, splits]
 const [totalRounds, setTotalRounds] = useState(0);
-const [winRateHistory, setWinRateHistory] = useState<{games: number, rate: number}[]>([]);
+const [winRateHistory, setWinRateHistory] = useState<{simulations: number, rate0: number, rate1: number}[]>([]);
 const [sweepRateHistory, setSweepRateHistory] = useState<{pairs: number, rate0: number, rate1: number}[]>([]);
 const [chinchonWins, setChinchonWins] = useState([0, 0]);
 const [simRun, setSimRun] = useState(false);
@@ -1329,8 +1350,9 @@ const [tourBots, setTourBots] = useState([0, 1, 2, 3]);
 const [tourResults, setTourResults] = useState(null);
 const [tourRunning, setTourRunning] = useState(false);
 const [tourProgress, setTourProgress] = useState(0);
-const [tourCurrentPair, setTourCurrentPair] = useState(null);
+const [tourCurrentMatch, setTourCurrentMatch] = useState(null);
 const [tourCurrentStats, setTourCurrentStats] = useState(null);
+const [tourMatchSnapshots, setTourMatchSnapshots] = useState(() => createEmptyTourMatchSnapshots());
 const stopTourRef = useRef(false);
 
 // Stabilization config — Sim
@@ -1340,6 +1362,19 @@ const [stabilizeDecimals, setStabilizeDecimals] = useState(1);
 // Stabilization config — Tournament
 const [tourUseStabilized, setTourUseStabilized] = useState(true);
 const [tourStabilizeDecimals, setTourStabilizeDecimals] = useState(1);
+const [tourMatrixView, setTourMatrixView] = useState<"percent" | "absolute">("percent");
+const [tourSection, setTourSection] = useState<"fixture" | "results">("fixture");
+
+const resetTournamentState = useCallback(() => {
+  stopTourRef.current = true;
+  setTourRunning(false);
+  setTourProgress(0);
+  setTourCurrentMatch(null);
+  setTourCurrentStats(null);
+  setTourResults(null);
+  setTourMatchSnapshots(createEmptyTourMatchSnapshots());
+  setTourSection("fixture");
+}, []);
 
 // Match viewer
 const [mvB0, setMvB0] = useState(0);
@@ -1362,71 +1397,18 @@ stopRef.current = false; setSimRun(true); setProg(0); setChartData(null);
 setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
 setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); setPromptCopied(false);
 const fd = {}, dd = {}; let rw0 = 0, rw1 = 0, gw0 = 0, gw1 = 0, sw0 = 0, sw1 = 0, splits = 0, tr = 0, cc0 = 0, cc1 = 0, done = 0;
-const wrSnaps: {games: number, rate: number}[] = [];
+const wrSnaps: {simulations: number, rate0: number, rate1: number}[] = [];
 const swSnaps: {pairs: number, rate0: number, rate1: number}[] = [];
 const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
 const MAX_SIMS = numSims;
+let lastStableRates = null;
+let stableStreak = 0;
 const tick = () => {
 if (stopRef.current) { setSimRun(false); return; }
 const batch = MAX_SIMS <= 100 ? 1 : MAX_SIMS <= 1000 ? 5 : MAX_SIMS <= 10000 ? 50 : 200;
-const end = Math.min(done + batch, MAX_SIMS);
-for (let i = done; i < end; i++) {
-const [gA, gB] = simulateGamePair(simB0, simB1);
-const winnerA = gA.gameLoser === 0 ? 1 : 0;
-const winnerB = gB.gameLoser === 0 ? 1 : 0;
-if (winnerA === 0) gw0++; else gw1++;
-if (winnerB === 0) gw0++; else gw1++;
-if (winnerA === 0 && winnerB === 0) sw0++;
-else if (winnerA === 1 && winnerB === 1) sw1++;
-else splits++;
-for (const game of [gA, gB]) {
-for (const rs of game.roundStats) {
-tr++;
-if (rs.winner === 0) { rw0++; fd[rs.cards] = (fd[rs.cards] || 0) + 1; } else { rw1++; dd[rs.cards] = (dd[rs.cards] || 0) + 1; }
-if (rs.chinchon) { if (rs.winner === 0) cc0++; else cc1++; }
-}
-}
-}
-done = end;
-const totalG = gw0 + gw1;
-if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
-const totalPairs = sw0 + sw1 + splits;
-if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
-setProg(Math.round(done / MAX_SIMS * 100));
-setChartData(buildChartData(fd, dd, n0, n1));
-setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
-setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonWins([cc0, cc1]);
-if (done < MAX_SIMS) setTimeout(tick, 0); else setSimRun(false);
-};
-setTimeout(tick, 0);
-}, [numSims, simB0, simB1]);
-
-const runSimUntilStable = useCallback(() => {
-stopRef.current = false; setSimRun(true); setProg(0); setChartData(null);
-setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
-setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); setPromptCopied(false);
-const fd = {}, dd = {}; let rw0 = 0, rw1 = 0, gw0 = 0, gw1 = 0, sw0 = 0, sw1 = 0, splits = 0, tr = 0, cc0 = 0, cc1 = 0, done = 0;
-const wrSnaps: {games: number, rate: number}[] = [];
-const swSnaps: {pairs: number, rate0: number, rate1: number}[] = [];
-const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
-const STABLE_WINDOW = 20;
-const STABLE_THRESHOLD = Math.pow(10, -stabilizeDecimals) * (stabilizeDecimals === 0 ? 3 : 1);
-const MIN_GAMES = 200;
-const MAX_SIMS = numSims;
-const BATCH = 20;
-const isStable = () => {
-  if (!useStabilized) return false;
-  if (wrSnaps.length < STABLE_WINDOW || done < MIN_GAMES) return false;
-  const recent = wrSnaps.slice(-STABLE_WINDOW).map(s => s.rate);
-  const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
-  const stddev = Math.sqrt(recent.reduce((a, b) => a + (b - mean) ** 2, 0) / recent.length);
-  return stddev < STABLE_THRESHOLD;
-};
-const tick = () => {
-if (stopRef.current) { setSimRun(false); return; }
-if (done >= MAX_SIMS) { setSimRun(false); setProg(100); return; }
-for (let i = 0; i < BATCH; i++) {
-if (done >= MAX_SIMS) break;
+let reachedStable = false;
+const simsThisTick = Math.min(batch, MAX_SIMS - done);
+for (let i = 0; i < simsThisTick; i++) {
 const [gA, gB] = simulateGamePair(simB0, simB1);
 const winnerA = gA.gameLoser === 0 ? 1 : 0;
 const winnerB = gB.gameLoser === 0 ? 1 : 0;
@@ -1443,17 +1425,26 @@ if (rs.chinchon) { if (rs.winner === 0) cc0++; else cc1++; }
 }
 }
 done++;
+if (useStabilized) {
+const truncatedRates = getTruncatedWinRates(gw0, gw1, stabilizeDecimals);
+stableStreak = getNextStableStreak(lastStableRates, truncatedRates, stableStreak);
+lastStableRates = truncatedRates;
+if (done >= MIN_SIMULATIONS_BEFORE_STABLE_STOP && stableStreak >= STABLE_SIMULATION_STREAK) {
+reachedStable = true;
+break;
 }
-const totalG = gw0 + gw1;
-if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
+}
+}
+const [winRate0, winRate1] = getWinRates(gw0, gw1);
+if (done > 0) wrSnaps.push({ simulations: done, rate0: winRate0, rate1: winRate1 });
 const totalPairs = sw0 + sw1 + splits;
 if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
-const progress = Math.round((done / MAX_SIMS) * 100);
-setProg(Math.min(100, progress));
+setProg(done >= MAX_SIMS || reachedStable ? 100 : Math.round(done / MAX_SIMS * 100));
 setChartData(buildChartData(fd, dd, n0, n1));
 setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
 setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonWins([cc0, cc1]);
-if (isStable() || done >= MAX_SIMS) { setSimRun(false); setProg(100); } else setTimeout(tick, 0);
+if (reachedStable || done >= MAX_SIMS) { setSimRun(false); return; }
+setTimeout(tick, 0);
 };
 setTimeout(tick, 0);
 }, [simB0, simB1, useStabilized, stabilizeDecimals, numSims]);
@@ -1461,50 +1452,50 @@ setTimeout(tick, 0);
 const runTournament = useCallback(() => {
 if (new Set(tourBots).size < 4) return;
 stopTourRef.current = false;
+const initialResults = createEmptyTournamentResults();
+const initialSnapshots = createEmptyTourMatchSnapshots();
+const firstMatch = TOURNAMENT_FIXTURE[0] ?? null;
+if (firstMatch) initialSnapshots[firstMatch.flatIndex] = buildTournamentMatchSnapshot(firstMatch, initialResults, "running");
 setTourRunning(true);
 setTourProgress(0);
-setTourCurrentPair(0);
-setTourCurrentStats(null);
-setTourResults(null);
+setTourCurrentMatch(firstMatch);
+setTourCurrentStats(firstMatch ? initialSnapshots[firstMatch.flatIndex] : null);
+setTourResults(initialResults);
+setTourMatchSnapshots(initialSnapshots);
 
-const n = 4;
-const pairs = [];
-for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) pairs.push([i, j]);
+const mutableResults = createEmptyTournamentResults();
+const wins = mutableResults.wins;
+const gamesPlayed = mutableResults.games;
+const mirrorWins = mutableResults.mirrorWins;
+const mirrorPairs = mutableResults.mirrorPairs;
+const chinchones = mutableResults.chinchones;
 
-const wins = Array.from({ length: n }, () => Array(n).fill(0));
-const gamesPlayed = Array.from({ length: n }, () => Array(n).fill(0));
-const mirrorWins = Array.from({ length: n }, () => Array(n).fill(0));
-const mirrorPairs = Array.from({ length: n }, () => Array(n).fill(0));
-const chinchones = Array.from({ length: n }, () => Array(n).fill(0));
-const chinchonGames = Array.from({ length: n }, () => Array(n).fill(0));
-
-const STABLE_WINDOW = 20;
-const STABLE_THRESHOLD = Math.pow(10, -tourStabilizeDecimals) * (tourStabilizeDecimals === 0 ? 3 : 1);
-const MIN_SIMS = 200;
 const MAX_SIMS = numSims;
 const BATCH = 20;
 let pairIdx = 0, simsDone = 0, currentWins = 0, currentTotal = 0, currentMirror = [0, 0], currentChinchones = [0, 0];
-const winSnapshots = [];
-
-const isStablePair = () => {
-  if (!tourUseStabilized) return false;
-  if (winSnapshots.length < STABLE_WINDOW || simsDone < MIN_SIMS) return false;
-  const recent = winSnapshots.slice(-STABLE_WINDOW);
-  const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
-  const stddev = Math.sqrt(recent.reduce((a, b) => a + (b - mean) ** 2, 0) / recent.length);
-  return stddev < STABLE_THRESHOLD;
-};
+let lastStableRates = null;
+let stableStreak = 0;
 
 const tick = () => {
   if (stopTourRef.current) { setTourRunning(false); return; }
-  const [ai, bi] = pairs[pairIdx];
+  const match = TOURNAMENT_FIXTURE[pairIdx];
+  if (!match) {
+    setTourRunning(false);
+    setTourProgress(100);
+    setTourCurrentMatch(null);
+    setTourCurrentStats(null);
+    return;
+  }
+  const { aSlot: ai, bSlot: bi, flatIndex } = match;
   const globalA = tourBots[ai], globalB = tourBots[bi];
   if (simsDone >= MAX_SIMS) {
     pairIdx++;
-    simsDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0]; winSnapshots.length = 0;
-    if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); setTourCurrentStats(null); return; }
+    simsDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0];
+    lastStableRates = null; stableStreak = 0;
+    if (pairIdx >= TOURNAMENT_FIXTURE.length) { setTourRunning(false); setTourProgress(100); setTourCurrentMatch(null); setTourCurrentStats(null); return; }
   }
   const simsThisTick = Math.min(BATCH, MAX_SIMS - simsDone);
+  let stable = false;
   for (let i = 0; i < simsThisTick; i++) {
     const [gA, gB] = simulateGamePair(globalA, globalB);
     const wA = (gA.gameLoser === 1 ? 1 : 0) + (gB.gameLoser === 1 ? 1 : 0);
@@ -1523,38 +1514,54 @@ const tick = () => {
     const chinForB = chinA1 + chinB1;
     chinchones[ai][bi] += chinForA;
     chinchones[bi][ai] += chinForB;
-    chinchonGames[ai][bi] += 2;
-    chinchonGames[bi][ai] += 2;
     currentChinchones[0] += chinForA;
     currentChinchones[1] += chinForB;
     currentWins += wA;
     currentTotal += 2;
+    simsDone++;
+    if (tourUseStabilized) {
+      const truncatedRates = getTruncatedWinRates(currentWins, currentTotal - currentWins, tourStabilizeDecimals);
+      stableStreak = getNextStableStreak(lastStableRates, truncatedRates, stableStreak);
+      lastStableRates = truncatedRates;
+      if (simsDone >= MIN_SIMULATIONS_BEFORE_STABLE_STOP && stableStreak >= STABLE_SIMULATION_STREAK) {
+        stable = true;
+        break;
+      }
+    }
   }
-  simsDone += simsThisTick;
-  winSnapshots.push(currentTotal > 0 ? (currentWins / currentTotal) * 100 : 50);
-  const stable = isStablePair();
-  const fraction = stable || simsDone >= MAX_SIMS ? 1 : Math.min(simsDone / MIN_SIMS, 0.99);
-  setTourProgress(Math.min(99, Math.round(((pairIdx + fraction) / pairs.length) * 100)));
-  setTourCurrentPair(pairIdx);
-  setTourCurrentStats({
-    games: currentTotal,
-    wins: [currentWins, currentTotal - currentWins],
-    mirrorWins: [...currentMirror],
-    chinchones: [...currentChinchones],
-  });
-  setTourResults({
+  const matchFinished = stable || simsDone >= MAX_SIMS;
+  const nextResults = {
     wins: wins.map(r => [...r]),
     games: gamesPlayed.map(r => [...r]),
     mirrorWins: mirrorWins.map(r => [...r]),
     mirrorPairs: mirrorPairs.map(r => [...r]),
     chinchones: chinchones.map(r => [...r]),
-    chinchonGames: chinchonGames.map(r => [...r]),
+  };
+  const snapshot = buildTournamentMatchSnapshot(match, nextResults, matchFinished ? "finished" : "running");
+  const fraction = matchFinished ? 1 : simsDone / MAX_SIMS;
+  setTourProgress(Math.min(99, Math.round(((pairIdx + fraction) / TOURNAMENT_FIXTURE.length) * 100)));
+  setTourCurrentMatch(match);
+  setTourCurrentStats(snapshot);
+  setTourResults(nextResults);
+  setTourMatchSnapshots(prev => {
+    const next = [...prev];
+    next[flatIndex] = snapshot;
+    return next;
   });
-  if (stable || simsDone >= MAX_SIMS) {
+  if (matchFinished) {
     pairIdx++;
-    simsDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0]; winSnapshots.length = 0;
-    if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); setTourCurrentStats(null); return; }
-    setTourCurrentPair(pairIdx);
+    simsDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0];
+    lastStableRates = null; stableStreak = 0;
+    if (pairIdx >= TOURNAMENT_FIXTURE.length) { setTourRunning(false); setTourProgress(100); setTourCurrentMatch(null); setTourCurrentStats(null); return; }
+    const nextMatch = TOURNAMENT_FIXTURE[pairIdx];
+    const nextSnapshot = buildTournamentMatchSnapshot(nextMatch, nextResults, "running");
+    setTourCurrentMatch(nextMatch);
+    setTourCurrentStats(nextSnapshot);
+    setTourMatchSnapshots(prev => {
+      const next = [...prev];
+      next[nextMatch.flatIndex] = nextSnapshot;
+      return next;
+    });
   }
   setTimeout(tick, 0);
 };
@@ -1677,9 +1684,7 @@ return (
         setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]);
         setPromptCopied(false); setNewBotPromptCopied(false);
         // Stop and clear tournament
-        stopTourRef.current = true;
-        setTourRunning(false); setTourProgress(0); setTourCurrentPair(null);
-        setTourCurrentStats(null); setTourResults(null);
+        resetTournamentState();
         setTab(k);
       }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>{l}</button>
     ))}
@@ -1725,14 +1730,20 @@ return (
                   {[0, 1, 2, 3].map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
+              <p className="text-[11px] leading-snug text-gray-500 max-w-xs">
+                Corta cuando los winrates truncados no cambian durante {STABLE_SIMULATION_STREAK} simulaciones seguidas.
+              </p>
             </div>
           )}
         </div>
 
         {!simRun ? (
           <div className="flex gap-2 mt-1 flex-wrap justify-center">
-            <button onClick={runSim} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95">Simular {numSims >= 1000 ? `${numSims / 1000}k` : numSims} simulaciones</button>
-            <button onClick={runSimUntilStable} className="bg-violet-700 hover:bg-violet-600 text-white px-4 py-1.5 rounded-md text-sm font-semibold active:scale-95" title="Corre hasta que el winrate se estabilice">⚖️ Auto-estabilizar</button>
+            <button onClick={runSim} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95">
+              {useStabilized
+                ? `Simular hasta ${numSims >= 1000 ? `${numSims / 1000}k` : numSims} o estabilizar`
+                : `Simular ${numSims >= 1000 ? `${numSims / 1000}k` : numSims} simulaciones`}
+            </button>
           </div>
         ) : <button onClick={() => { stopRef.current = true; }} className="bg-red-600 hover:bg-red-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold mt-1">Parar ({prog}%)</button>}
       </div>
@@ -1784,7 +1795,7 @@ return (
 
       {/* Combined charts panel — always visible */}
       {(() => {
-        const winData = winRateHistory.map(d => ({ x: d.games, y0: d.rate, y1: 100 - d.rate }));
+        const winData = winRateHistory.map(d => ({ x: d.simulations, y0: d.rate0, y1: d.rate1 }));
         const sweepData = sweepRateHistory.map(d => ({ x: d.pairs, y0: d.rate0, y1: d.rate1 }));
         const activeData = chartTab === "winrate" ? winData : sweepData;
         const sliced = chartZoom ? activeData.slice(-chartZoom) : activeData;
@@ -1815,7 +1826,7 @@ return (
             </div>
             <p className="text-xs text-gray-600 text-center mb-2">
               {chartTab === "winrate"
-                ? "Partidas ganadas acumuladas por simulación · si la línea se estabiliza, la muestra es suficiente"
+                ? "Winrate acumulado por simulación espejo · si los porcentajes truncados se clavan, la muestra alcanza"
                 : "% de simulaciones donde cada bot gana ambas partidas espejo (sin empates)"}
             </p>
             <RateChart data={sliced} bot0={BOT[simB0]} bot1={BOT[simB1]} />
@@ -1839,12 +1850,12 @@ return (
           <div className="flex items-center justify-between">
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{chinchonWins[0]}</div>
-              <div className="text-xs text-gray-500">{(chinchonWins[0] / (gameWins[0] + gameWins[1]) * 100).toFixed(4)}% de partidas</div>
+              <div className="text-xs text-gray-500">{getChinchonWinRate(chinchonWins[0], gameWins[0]).toFixed(4)}% de sus victorias</div>
             </div>
-            <div className="text-center px-3 text-xs text-gray-600">🏆 por bot</div>
+            <div className="text-center px-3 text-xs text-gray-600">🏆 sobre victorias</div>
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{chinchonWins[1]}</div>
-              <div className="text-xs text-gray-500">{(chinchonWins[1] / (gameWins[0] + gameWins[1]) * 100).toFixed(4)}% de partidas</div>
+              <div className="text-xs text-gray-500">{getChinchonWinRate(chinchonWins[1], gameWins[1]).toFixed(4)}% de sus victorias</div>
             </div>
           </div>
         </div>
@@ -2013,67 +2024,71 @@ return (
 
   {/* --- TORNEO --- */}
   {tab === "torneo" && (() => {
-    const TOUR_N = 4;
-    const tourPairs = [];
-    for (let i = 0; i < TOUR_N; i++) for (let j = i + 1; j < TOUR_N; j++) tourPairs.push([i, j]);
-
-    const getBotWins = (ai) => {
-      if (!tourResults) return { wins: 0, games: 0 };
-      let totalW = 0, totalG = 0;
-      for (let j = 0; j < TOUR_N; j++) {
-        if (j === ai) continue;
-        if (j > ai) { totalW += tourResults.wins[ai][j]; totalG += tourResults.games[ai][j]; }
-        else { totalW += tourResults.games[j][ai] - tourResults.wins[j][ai]; totalG += tourResults.games[j][ai]; }
-      }
-      return { wins: totalW, games: totalG };
-    };
-    const getBotMirrorWins = (ai) => {
-      if (!tourResults) return { wins: 0, pairs: 0 };
-      let totalW = 0, totalP = 0;
-      for (let j = 0; j < TOUR_N; j++) {
-        if (j === ai) continue;
-        totalW += tourResults.mirrorWins[ai][j];
-        if (j > ai) totalP += tourResults.mirrorPairs[ai][j];
-        else totalP += tourResults.mirrorPairs[j][ai];
-      }
-      return { wins: totalW, pairs: totalP };
-    };
-    const getBotChinchones = (ai) => {
-      if (!tourResults) return { chinchones: 0, games: 0 };
-      let totalC = 0, totalG = 0;
-      for (let j = 0; j < TOUR_N; j++) {
-        if (j === ai) continue;
-        totalC += tourResults.chinchones[ai][j];
-        totalG += tourResults.chinchonGames[ai][j];
-      }
-      return { chinchones: totalC, games: totalG };
-    };
-
-    const rankingWins = [0, 1, 2, 3].map(ai => {
-      const { wins: w, games: g } = getBotWins(ai);
-      return { idx: ai, winPct: g > 0 ? (w / g) * 100 : 0, games: g };
-    }).sort((a, b) => b.winPct - a.winPct);
-    const rankingMirror = [0, 1, 2, 3].map(ai => {
-      const { wins: w, pairs: p } = getBotMirrorWins(ai);
-      return { idx: ai, wins: w, pairs: p, winPct: p > 0 ? (w / p) * 100 : 0 };
-    }).sort((a, b) => b.winPct - a.winPct);
-    const rankingChinchon = [0, 1, 2, 3].map(ai => {
-      const { chinchones: c, games: g } = getBotChinchones(ai);
-      return { idx: ai, chinchones: c, games: g, rate: g > 0 ? (c / g) * 100 : 0 };
-    }).sort((a, b) => b.chinchones - a.chinchones || b.rate - a.rate);
-
+    const {
+      botTotals,
+      rankingWins,
+      rankingMirror,
+      rankingChinchon,
+      beatAllAwardWinner,
+      lostToEveryoneAward,
+      noRiskBots,
+      ceremonyRanking,
+      ceremonyChampion,
+      winsAwardWinner,
+      chinchonAwardWinner,
+      mirrorAwardWinner,
+    } = buildTournamentCeremonyData(tourResults);
     const isDone = !tourRunning && tourProgress === 100 && tourResults !== null;
     const medals = ["🥇", "🥈", "🥉", "🗑️"];
+    const extraAwardCards = [
+    ];
+    const awardCards = [
+      {
+        key: "wins",
+        title: "Mayor ganador",
+        subtitle: "2 pts al primero, el resto nada",
+        emoji: "👑",
+        accent: "#fbbf24",
+        winner: winsAwardWinner,
+        detail: (winner) => `${winner.wins} victorias totales`,
+      },
+      {
+        key: "chinchones",
+        title: "Farmeada de Aura",
+        subtitle: "Reconocimiento + 2 pts",
+        emoji: "✨",
+        accent: "#a78bfa",
+        winner: chinchonAwardWinner,
+        detail: (winner) => `${winner.chinchones} chinchones`,
+      },
+      {
+        key: "mirror",
+        title: "Mas Letal",
+        subtitle: "4 pts al primero, 2 pts al segundo",
+        emoji: "⚔️",
+        accent: "#f87171",
+        winner: mirrorAwardWinner,
+        detail: (winner) => `${winner.mirrorWins} espejos ganados`,
+      },
+      beatAllAwardWinner ? {
+        key: "beat-all",
+        title: "Aquel que le gano a todos",
+        subtitle: "Reconocimiento + 2 pts",
+        emoji: "🧨",
+        accent: "#34d399",
+        winner: beatAllAwardWinner,
+        detail: () => "Gano su head-to-head contra todos",
+      } : null,
+    ].filter(Boolean);
 
     return (
       <div className="flex flex-col items-center w-full max-w-2xl">
         <h2 className="text-sm font-semibold text-gray-200 mb-1">Torneo todos contra todos</h2>
-        <p className="text-xs text-gray-600 mb-4 text-center">6 enfrentamientos auto-estabilizados · Determina el mejor bot de los 4 elegidos</p>
+        <p className="text-xs text-gray-600 mb-4 text-center">3 fechas estilo fase de grupos FIFA · 6 enfrentamientos para encontrar al mejor bot</p>
 
         {/* Bot selection 2×2 */}
         <div className="grid grid-cols-2 gap-2 w-full mb-4">
           {[0, 1, 2, 3].map(slot => {
-            const selBot = BOT[tourBots[slot]];
             return (
               <div key={slot} className="bg-gray-900 rounded-lg p-2.5 border border-gray-800">
                 <div className="text-xs text-gray-500 mb-1.5">Bot {slot + 1}</div>
@@ -2082,7 +2097,11 @@ return (
                     const taken = tourBots.some((tb, s) => s !== slot && tb === bi);
                     return (
                       <button key={bi} disabled={taken || tourRunning}
-                        onClick={() => setTourBots(prev => { const next = [...prev]; next[slot] = bi; return next; })}
+                        onClick={() => {
+                          if (tourBots[slot] === bi) return;
+                          resetTournamentState();
+                          setTourBots(prev => { const next = [...prev]; next[slot] = bi; return next; });
+                        }}
                         className={`px-2 py-1 rounded text-xs border transition-all disabled:cursor-not-allowed ${tourBots[slot] === bi ? "border-2 scale-105" : `border-gray-700 ${taken ? "opacity-20" : "hover:border-gray-500"}`}`}
                         style={tourBots[slot] === bi ? { borderColor: b.color, color: b.color, background: `${b.color}15` } : { color: taken ? "#333" : b.color }}>
                         {b.emoji} {b.name}
@@ -2123,6 +2142,9 @@ return (
                   {[0, 1, 2, 3].map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
+              <p className="text-[11px] leading-snug text-gray-500 max-w-xs">
+                Corta cuando los winrates truncados no cambian durante {STABLE_SIMULATION_STREAK} simulaciones seguidas.
+              </p>
             </div>
           )}
           <div className="mt-3 pt-3 border-t border-gray-700">
@@ -2146,7 +2168,7 @@ return (
             🏆 Iniciar torneo {tourUseStabilized ? 'estabilizado' : ''}
           </button>
         ) : (
-          <button onClick={() => { stopTourRef.current = true; }}
+          <button onClick={resetTournamentState}
             className="bg-red-600 hover:bg-red-500 text-white px-5 py-2 rounded-lg text-sm font-bold mb-3">
             Parar ({tourProgress}%)
           </button>
@@ -2161,19 +2183,19 @@ return (
         )}
 
         {/* Current matchup status */}
-        {tourRunning && tourCurrentPair !== null && (
+        {tourRunning && tourCurrentMatch && (
           <div className="text-xs text-gray-500 mb-3 text-center">
-            Corriendo enfrentamiento {tourCurrentPair + 1} de {tourPairs.length}:{" "}
-            <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][0]]].color }}>
-              {BOT[tourBots[tourPairs[tourCurrentPair][0]]].emoji} {BOT[tourBots[tourPairs[tourCurrentPair][0]]].name}
+            Corriendo Fecha {tourCurrentMatch.fechaIndex + 1} · Partido {tourCurrentMatch.matchIndex + 1}:{" "}
+            <span style={{ color: BOT[tourBots[tourCurrentMatch.aSlot]].color }}>
+              {BOT[tourBots[tourCurrentMatch.aSlot]].emoji} {BOT[tourBots[tourCurrentMatch.aSlot]].name}
             </span>
             {" vs "}
-            <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>
-              {BOT[tourBots[tourPairs[tourCurrentPair][1]]].emoji} {BOT[tourBots[tourPairs[tourCurrentPair][1]]].name}
+            <span style={{ color: BOT[tourBots[tourCurrentMatch.bSlot]].color }}>
+              {BOT[tourBots[tourCurrentMatch.bSlot]].emoji} {BOT[tourBots[tourCurrentMatch.bSlot]].name}
             </span>
           </div>
         )}
-        {tourRunning && tourCurrentStats && tourCurrentPair !== null && (
+        {tourRunning && tourCurrentStats && tourCurrentMatch && (
           <div className="w-full bg-gray-900 border border-gray-800 rounded-lg p-3 mb-4">
             <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-2 text-center">Enfrentamiento actual</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
@@ -2184,194 +2206,542 @@ return (
               <div className="bg-gray-800/70 rounded p-2">
                 <div className="text-gray-500">Victorias</div>
                 <div className="font-mono">
-                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][0]]].color }}>{tourCurrentStats.wins[0]}</span>
+                  <span style={{ color: BOT[tourBots[tourCurrentMatch.aSlot]].color }}>{tourCurrentStats.wins[0]}</span>
                   <span className="text-gray-500"> - </span>
-                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>{tourCurrentStats.wins[1]}</span>
+                  <span style={{ color: BOT[tourBots[tourCurrentMatch.bSlot]].color }}>{tourCurrentStats.wins[1]}</span>
+                </div>
+                <div className="text-[11px] text-gray-500 mt-1">
+                  {tourCurrentStats.winPct[0].toFixed(2)}% · {tourCurrentStats.winPct[1].toFixed(2)}%
                 </div>
               </div>
               <div className="bg-gray-800/70 rounded p-2">
                 <div className="text-gray-500">Victorias espejo</div>
                 <div className="font-mono">
-                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][0]]].color }}>{tourCurrentStats.mirrorWins[0]}</span>
+                  <span style={{ color: BOT[tourBots[tourCurrentMatch.aSlot]].color }}>{tourCurrentStats.mirrorWins[0]}</span>
                   <span className="text-gray-500"> - </span>
-                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>{tourCurrentStats.mirrorWins[1]}</span>
+                  <span style={{ color: BOT[tourBots[tourCurrentMatch.bSlot]].color }}>{tourCurrentStats.mirrorWins[1]}</span>
+                </div>
+                <div className="text-[11px] text-gray-500 mt-1">
+                  {tourCurrentStats.mirrorPct[0].toFixed(2)}% · {tourCurrentStats.mirrorPct[1].toFixed(2)}%
                 </div>
               </div>
               <div className="bg-gray-800/70 rounded p-2">
                 <div className="text-gray-500">Chinchones</div>
                 <div className="font-mono">
-                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][0]]].color }}>{tourCurrentStats.chinchones[0]}</span>
+                  <span style={{ color: BOT[tourBots[tourCurrentMatch.aSlot]].color }}>{tourCurrentStats.chinchones[0]}</span>
                   <span className="text-gray-500"> - </span>
-                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>{tourCurrentStats.chinchones[1]}</span>
+                  <span style={{ color: BOT[tourBots[tourCurrentMatch.bSlot]].color }}>{tourCurrentStats.chinchones[1]}</span>
                 </div>
               </div>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-2 mt-2">
+              {[tourCurrentMatch.aSlot, tourCurrentMatch.bSlot].map((slot, idx) => {
+                const bot = BOT[tourBots[slot]];
+                const totals = tourCurrentStats.totals[idx];
+                return (
+                  <div key={slot} className="bg-gray-800/70 rounded p-2 text-xs">
+                    <div className="font-semibold mb-1" style={{ color: bot.color }}>{bot.emoji} {bot.name}</div>
+                    <div className="text-gray-400">Victorias totales: <span className="font-mono" style={{ color: bot.color }}>{totals.wins} ({totals.winPct.toFixed(2)}%)</span></div>
+                    <div className="text-gray-400 mt-1">Victorias espejo: <span className="font-mono" style={{ color: bot.color }}>{totals.mirrorWins} ({totals.mirrorPct.toFixed(2)}%)</span></div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
 
-        {tourResults && (
-          <>
-            {/* Results matrix */}
-            <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 overflow-x-auto">
-              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">Matriz de resultados (% victorias fila vs columna)</h3>
-              <table className="w-full text-xs min-w-[320px]">
-                <thead>
-                  <tr>
-                    <th className="text-gray-600 text-left py-1 pr-3 font-normal w-24">Bot</th>
-                    {[0, 1, 2, 3].map(j => {
-                      const b = BOT[tourBots[j]];
-                      return <th key={j} className="text-center px-2 py-1 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</th>;
-                    })}
-                    <th className="text-center px-2 py-1 text-gray-400 font-medium">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[0, 1, 2, 3].map(ai => {
-                    const b = BOT[tourBots[ai]];
-                    const { wins: totalW, games: totalG } = getBotWins(ai);
-                    const winPct = totalG > 0 ? (totalW / totalG) * 100 : null;
-                    return (
-                      <tr key={ai} className="border-t border-gray-800">
-                        <td className="py-2 pr-3 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</td>
-                        {[0, 1, 2, 3].map(j => {
-                          if (j === ai) return <td key={j} className="text-center text-gray-700 py-2">—</td>;
-                          let w, g;
-                          if (j > ai) { w = tourResults.wins[ai][j]; g = tourResults.games[ai][j]; }
-                          else { w = tourResults.games[j][ai] - tourResults.wins[j][ai]; g = tourResults.games[j][ai]; }
-                          if (g === 0) return <td key={j} className="text-center text-gray-600 py-2">...</td>;
-                          const pct = (w / g) * 100;
-                          const col = pct >= 55 ? "#22c55e" : pct >= 47 ? "#9ca3af" : "#f87171";
-                          return <td key={j} className="text-center py-2 font-mono" style={{ color: col }}>{pct.toFixed(1)}%</td>;
-                        })}
-                        <td className="text-center py-2 font-bold font-mono">
-                          {winPct !== null
-                            ? <span style={{ color: b.color }}>{winPct.toFixed(2)}%</span>
-                            : <span className="text-gray-600">...</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 overflow-x-auto">
-              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">Matriz espejo (% de pares donde la fila gana ambas)</h3>
-              <table className="w-full text-xs min-w-[320px]">
-                <thead>
-                  <tr>
-                    <th className="text-gray-600 text-left py-1 pr-3 font-normal w-24">Bot</th>
-                    {[0, 1, 2, 3].map(j => {
-                      const b = BOT[tourBots[j]];
-                      return <th key={j} className="text-center px-2 py-1 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</th>;
-                    })}
-                    <th className="text-center px-2 py-1 text-gray-400 font-medium">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[0, 1, 2, 3].map(ai => {
-                    const b = BOT[tourBots[ai]];
-                    const { wins: totalW, pairs: totalP } = getBotMirrorWins(ai);
-                    const winPct = totalP > 0 ? (totalW / totalP) * 100 : null;
-                    return (
-                      <tr key={ai} className="border-t border-gray-800">
-                        <td className="py-2 pr-3 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</td>
-                        {[0, 1, 2, 3].map(j => {
-                          if (j === ai) return <td key={j} className="text-center text-gray-700 py-2">—</td>;
-                          const p = j > ai ? tourResults.mirrorPairs[ai][j] : tourResults.mirrorPairs[j][ai];
-                          const w = tourResults.mirrorWins[ai][j];
-                          if (p === 0) return <td key={j} className="text-center text-gray-600 py-2">...</td>;
-                          const pct = (w / p) * 100;
-                          return <td key={j} className="text-center py-2 font-mono text-violet-300">{pct.toFixed(1)}%</td>;
-                        })}
-                        <td className="text-center py-2 font-bold font-mono">
-                          {winPct !== null ? <span style={{ color: b.color }}>{winPct.toFixed(2)}%</span> : <span className="text-gray-600">...</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+        <div className="w-full flex justify-center mb-4">
+          <div className="flex gap-0.5 bg-gray-900 rounded-lg p-0.5 border border-gray-800">
+            <button
+              onClick={() => setTourSection("fixture")}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${tourSection === "fixture" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
+            >
+              Fixture
+            </button>
+            <button
+              onClick={() => setTourSection("results")}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${tourSection === "results" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
+            >
+              Resultados
+            </button>
+          </div>
+        </div>
 
-            {/* Ranking / Podium */}
-            <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4">
-              {isDone && (
-                <div className="text-center mb-5">
-                  <div className="text-5xl mb-2">{BOT[tourBots[rankingWins[0].idx]].emoji}</div>
-                  <div className="text-xl font-extrabold" style={{ color: BOT[tourBots[rankingWins[0].idx]].color }}>
-                    {BOT[tourBots[rankingWins[0].idx]].name}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1">
-                    🏆 Mejor bot · {rankingWins[0].winPct.toFixed(2)}% de victorias globales
-                  </div>
+        {tourSection === "fixture" && (
+          <div className="w-full flex flex-col gap-4 mb-4">
+            {TOURNAMENT_FIXTURE_BY_FECHA.map((fecha, fechaIndex) => (
+              <div key={fechaIndex} className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-xs text-gray-400 uppercase tracking-wider">Fecha {fechaIndex + 1}</h3>
+                  <span className="text-[11px] text-gray-600">2 partidos</span>
                 </div>
-              )}
-              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">
-                {isDone ? "Clasificación final" : "Clasificación parcial"}
-              </h3>
-              <h4 className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">1) Victorias totales</h4>
-              <div className="flex flex-col gap-2.5 mb-4">
-                {rankingWins.map((r, pos) => {
-                  const bot = BOT[tourBots[r.idx]];
-                  const barW = r.games > 0 ? Math.max(2, Math.min(100, r.winPct * 2 - 50)) : 2;
-                  return (
-                    <div key={r.idx} className="flex items-center gap-2">
-                      <span className="text-base w-7 text-center shrink-0">{medals[pos]}</span>
-                      <span className="w-28 text-xs font-semibold shrink-0" style={{ color: bot.color }}>{bot.emoji} {bot.name}</span>
-                      <div className="flex-1 h-5 bg-gray-800 rounded overflow-hidden">
-                        <div className="h-full rounded transition-all duration-300"
-                          style={{ width: `${barW}%`, background: bot.color + "99" }} />
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {fecha.map((match) => {
+                    const botA = BOT[tourBots[match.aSlot]];
+                    const botB = BOT[tourBots[match.bSlot]];
+                    const snapshot = tourMatchSnapshots[match.flatIndex] ?? buildTournamentMatchSnapshot(match, null, "pending");
+                    const isRunning = snapshot.status === "running";
+                    const isFinished = snapshot.status === "finished";
+                    const badgeClass = isFinished
+                      ? "border-emerald-700/80 bg-emerald-900/20 text-emerald-300"
+                      : isRunning
+                        ? "border-amber-700/80 bg-amber-900/20 text-amber-300"
+                        : "border-gray-700 bg-gray-800/80 text-gray-500";
+                    const cardClass = isRunning
+                      ? "border-amber-700/60 shadow-[0_0_0_1px_rgba(217,119,6,0.2)]"
+                      : isFinished
+                        ? "border-emerald-800/60"
+                        : "border-gray-800";
+                    return (
+                      <div key={match.flatIndex} className={`rounded-xl border bg-gray-950/60 p-3 ${cardClass}`}>
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <span className="text-[11px] text-gray-600">Partido {match.matchIndex + 1}</span>
+                          <span className={`px-2 py-0.5 rounded-full border text-[11px] font-medium ${badgeClass}`}>
+                            {snapshot.status === "finished" ? "Finalizado" : snapshot.status === "running" ? "En juego" : "Pendiente"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                          <div className="text-xs font-semibold text-left" style={{ color: botA.color }}>{botA.emoji} {botA.name}</div>
+                          <div className="text-[11px] text-gray-600 uppercase tracking-wider">vs</div>
+                          <div className="text-xs font-semibold text-right" style={{ color: botB.color }}>{botB.emoji} {botB.name}</div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div className="rounded-lg bg-gray-900/80 p-2">
+                            <div className="text-gray-500">Partidas</div>
+                            <div className="text-gray-200 font-mono mt-1">{snapshot.games}</div>
+                          </div>
+                          <div className="rounded-lg bg-gray-900/80 p-2">
+                            <div className="text-gray-500">Chinchones</div>
+                            <div className="font-mono mt-1">
+                              <span style={{ color: botA.color }}>{snapshot.chinchones[0]}</span>
+                              <span className="text-gray-500"> - </span>
+                              <span style={{ color: botB.color }}>{snapshot.chinchones[1]}</span>
+                            </div>
+                          </div>
+                          <div className="rounded-lg bg-gray-900/80 p-2">
+                            <div className="text-gray-500">Victorias</div>
+                            <div className="font-mono mt-1">
+                              <span style={{ color: botA.color }}>{snapshot.wins[0]}</span>
+                              <span className="text-gray-500"> - </span>
+                              <span style={{ color: botB.color }}>{snapshot.wins[1]}</span>
+                            </div>
+                            <div className="text-[11px] text-gray-500 mt-1">
+                              {snapshot.winPct[0].toFixed(2)}% · {snapshot.winPct[1].toFixed(2)}%
+                            </div>
+                          </div>
+                          <div className="rounded-lg bg-gray-900/80 p-2">
+                            <div className="text-gray-500">Victorias espejo</div>
+                            <div className="font-mono mt-1">
+                              <span style={{ color: botA.color }}>{snapshot.mirrorWins[0]}</span>
+                              <span className="text-gray-500"> - </span>
+                              <span style={{ color: botB.color }}>{snapshot.mirrorWins[1]}</span>
+                            </div>
+                            <div className="text-[11px] text-gray-500 mt-1">
+                              {snapshot.mirrorPct[0].toFixed(2)}% · {snapshot.mirrorPct[1].toFixed(2)}%
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-gray-800">
+                          <div className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">Acumulado del torneo</div>
+                          <div className="space-y-2 text-xs">
+                            <div className="rounded-lg bg-gray-900/70 p-2">
+                              <div className="font-semibold mb-1" style={{ color: botA.color }}>{botA.emoji} {botA.name}</div>
+                              <div className="text-gray-400">Victorias totales: <span className="font-mono" style={{ color: botA.color }}>{snapshot.totals[0].wins} ({snapshot.totals[0].winPct.toFixed(2)}%)</span></div>
+                              <div className="text-gray-400 mt-1">Victorias espejo: <span className="font-mono" style={{ color: botA.color }}>{snapshot.totals[0].mirrorWins} ({snapshot.totals[0].mirrorPct.toFixed(2)}%)</span></div>
+                            </div>
+                            <div className="rounded-lg bg-gray-900/70 p-2">
+                              <div className="font-semibold mb-1" style={{ color: botB.color }}>{botB.emoji} {botB.name}</div>
+                              <div className="text-gray-400">Victorias totales: <span className="font-mono" style={{ color: botB.color }}>{snapshot.totals[1].wins} ({snapshot.totals[1].winPct.toFixed(2)}%)</span></div>
+                              <div className="text-gray-400 mt-1">Victorias espejo: <span className="font-mono" style={{ color: botB.color }}>{snapshot.totals[1].mirrorWins} ({snapshot.totals[1].mirrorPct.toFixed(2)}%)</span></div>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-xs font-mono w-16 text-right shrink-0" style={{ color: bot.color }}>
-                        {r.games > 0 ? `${r.winPct.toFixed(2)}%` : "..."}
-                      </span>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-              <h4 className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">2) Victorias espejo</h4>
-              <div className="flex flex-col gap-2.5 mb-4">
-                {rankingMirror.map((r, pos) => {
-                  const bot = BOT[tourBots[r.idx]];
-                  const barW = r.pairs > 0 ? Math.max(2, Math.min(100, r.winPct)) : 2;
-                  return (
-                    <div key={r.idx} className="flex items-center gap-2">
-                      <span className="text-base w-7 text-center shrink-0">{medals[pos]}</span>
-                      <span className="w-28 text-xs font-semibold shrink-0" style={{ color: bot.color }}>{bot.emoji} {bot.name}</span>
-                      <div className="flex-1 h-5 bg-gray-800 rounded overflow-hidden">
-                        <div className="h-full rounded transition-all duration-300" style={{ width: `${barW}%`, background: bot.color + "99" }} />
-                      </div>
-                      <span className="text-xs font-mono w-24 text-right shrink-0" style={{ color: bot.color }}>
-                        {r.pairs > 0 ? `${r.wins} (${r.winPct.toFixed(2)}%)` : "..."}
-                      </span>
-                    </div>
-                  );
-                })}
+            ))}
+            <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+              <div className="text-xs text-gray-500 mb-3">
+                {isDone
+                  ? "Ya terminaron todas las fechas. Podés pasar a la parte de resultados."
+                  : "El boton de resultados se habilita cuando terminen todas las fechas."}
               </div>
-              <h4 className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">3) Chinchones</h4>
-              <div className="flex flex-col gap-2.5">
-                {rankingChinchon.map((r, pos) => {
-                  const bot = BOT[tourBots[r.idx]];
-                  const barW = r.games > 0 ? Math.max(2, Math.min(100, r.rate * 2)) : 2;
-                  return (
-                    <div key={r.idx} className="flex items-center gap-2">
-                      <span className="text-base w-7 text-center shrink-0">{medals[pos]}</span>
-                      <span className="w-28 text-xs font-semibold shrink-0" style={{ color: bot.color }}>{bot.emoji} {bot.name}</span>
-                      <div className="flex-1 h-5 bg-gray-800 rounded overflow-hidden">
-                        <div className="h-full rounded transition-all duration-300" style={{ width: `${barW}%`, background: bot.color + "99" }} />
-                      </div>
-                      <span className="text-xs font-mono w-28 text-right shrink-0" style={{ color: bot.color }}>
-                        {r.games > 0 ? `${r.chinchones} (${r.rate.toFixed(2)}%)` : "..."}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              {!isDone && tourRunning && (
-                <p className="text-xs text-gray-600 text-center mt-3">Resultados parciales — el torneo sigue corriendo</p>
-              )}
+              <button
+                onClick={() => setTourSection("results")}
+                disabled={!isDone}
+                className={`px-5 py-2 rounded-lg text-sm font-bold transition-all ${
+                  isDone
+                    ? "bg-emerald-600 hover:bg-emerald-500 text-white active:scale-95"
+                    : "bg-gray-800 text-gray-500 border border-gray-700 cursor-not-allowed"
+                }`}
+              >
+                Ver resultados
+              </button>
             </div>
-          </>
+          </div>
+        )}
+
+        {tourSection === "results" && (
+          tourResults ? (
+            <>
+              <div className="w-full flex justify-center mb-3">
+                <div className="flex gap-0.5 bg-gray-900 rounded-lg p-0.5 border border-gray-800">
+                  <button
+                    onClick={() => setTourMatrixView("percent")}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${tourMatrixView === "percent" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
+                  >
+                    Ver %
+                  </button>
+                  <button
+                    onClick={() => setTourMatrixView("absolute")}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${tourMatrixView === "absolute" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
+                  >
+                    Ver absolutos
+                  </button>
+                </div>
+              </div>
+
+              {/* Results matrix */}
+              <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 overflow-x-auto">
+                <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">
+                  {tourMatrixView === "percent"
+                    ? "Matriz de resultados (% victorias fila vs columna)"
+                    : "Matriz de resultados (victorias absolutas fila vs columna)"}
+                </h3>
+                <table className="w-full text-xs min-w-[320px]">
+                  <thead>
+                    <tr>
+                      <th className="text-gray-600 text-left py-1 pr-3 font-normal w-24">Bot</th>
+                      {slots.map(j => {
+                        const b = BOT[tourBots[j]];
+                        return <th key={j} className="text-center px-2 py-1 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</th>;
+                      })}
+                      <th className="text-center px-2 py-1 text-gray-400 font-medium">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {slots.map(ai => {
+                      const b = BOT[tourBots[ai]];
+                      const total = botTotals[ai];
+                      const winPct = total.games > 0 ? total.winPct : null;
+                      return (
+                        <tr key={ai} className="border-t border-gray-800">
+                          <td className="py-2 pr-3 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</td>
+                          {slots.map(j => {
+                            if (j === ai) return <td key={j} className="text-center text-gray-700 py-2">—</td>;
+                            const low = Math.min(ai, j);
+                            const high = Math.max(ai, j);
+                            const g = tourResults.games[low][high];
+                            const w = ai < j ? tourResults.wins[ai][j] : g - tourResults.wins[j][ai];
+                            if (g === 0) return <td key={j} className="text-center text-gray-600 py-2">...</td>;
+                            const pct = (w / g) * 100;
+                            const col = pct >= 55 ? "#22c55e" : pct >= 47 ? "#9ca3af" : "#f87171";
+                            return (
+                              <td key={j} className="text-center py-2 font-mono" style={{ color: col }}>
+                                {tourMatrixView === "percent" ? `${pct.toFixed(1)}%` : w}
+                              </td>
+                            );
+                          })}
+                          <td className="text-center py-2 font-bold font-mono">
+                            {winPct !== null
+                              ? <span style={{ color: b.color }}>{tourMatrixView === "percent" ? `${winPct.toFixed(2)}%` : total.wins}</span>
+                              : <span className="text-gray-600">...</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 overflow-x-auto">
+                <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">
+                  {tourMatrixView === "percent"
+                    ? "Matriz espejo (% de pares donde la fila gana ambas)"
+                    : "Matriz espejo (dobles espejo ganados por la fila)"}
+                </h3>
+                <table className="w-full text-xs min-w-[320px]">
+                  <thead>
+                    <tr>
+                      <th className="text-gray-600 text-left py-1 pr-3 font-normal w-24">Bot</th>
+                      {slots.map(j => {
+                        const b = BOT[tourBots[j]];
+                        return <th key={j} className="text-center px-2 py-1 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</th>;
+                      })}
+                      <th className="text-center px-2 py-1 text-gray-400 font-medium">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {slots.map(ai => {
+                      const b = BOT[tourBots[ai]];
+                      const total = botTotals[ai];
+                      const winPct = total.mirrorPairs > 0 ? total.mirrorPct : null;
+                      return (
+                        <tr key={ai} className="border-t border-gray-800">
+                          <td className="py-2 pr-3 font-medium" style={{ color: b.color }}>{b.emoji} {b.name}</td>
+                          {slots.map(j => {
+                            if (j === ai) return <td key={j} className="text-center text-gray-700 py-2">—</td>;
+                            const p = ai < j ? tourResults.mirrorPairs[ai][j] : tourResults.mirrorPairs[j][ai];
+                            const w = tourResults.mirrorWins[ai][j];
+                            if (p === 0) return <td key={j} className="text-center text-gray-600 py-2">...</td>;
+                            const pct = (w / p) * 100;
+                            return (
+                              <td key={j} className="text-center py-2 font-mono text-violet-300">
+                                {tourMatrixView === "percent" ? `${pct.toFixed(1)}%` : w}
+                              </td>
+                            );
+                          })}
+                          <td className="text-center py-2 font-bold font-mono">
+                            {winPct !== null
+                              ? <span style={{ color: b.color }}>{tourMatrixView === "percent" ? `${winPct.toFixed(2)}%` : total.mirrorWins}</span>
+                              : <span className="text-gray-600">...</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Ranking / Podium */}
+              <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4">
+                {isDone && (
+                  <div className="mb-5 rounded-2xl border border-amber-700/40 bg-gradient-to-b from-amber-500/10 via-gray-900 to-gray-950 p-4">
+                    <div className="text-center mb-4">
+                      <div className="text-[11px] text-amber-300 uppercase tracking-[0.2em] mb-1">Ceremonia de premios</div>
+                      <div className="text-sm font-semibold text-gray-100">El torneo termino y cada bot recibe lo que se gano</div>
+                      <div className="text-xs text-gray-500 mt-1">El campeon final sale de combinar todas las metricas buenas del torneo.</div>
+                    </div>
+                    <div className={`grid gap-3 mb-4 ${awardCards.length >= 4 ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}>
+                      {awardCards.map((award) => {
+                        const bot = BOT[tourBots[award.winner.idx]];
+                        return (
+                          <div key={award.key} className="rounded-2xl border border-gray-800 bg-gray-950/80 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: award.accent }}>{award.title}</div>
+                                <div className="text-xs text-gray-500 mt-1">{award.subtitle}</div>
+                              </div>
+                              <div className="text-2xl">{award.emoji}</div>
+                            </div>
+                            <div className="mt-3 rounded-xl border border-gray-800 bg-gray-900/80 p-3">
+                              <div className="text-lg leading-none mb-1">{bot.emoji}</div>
+                              <div className="text-sm font-bold" style={{ color: bot.color }}>{bot.name}</div>
+                              <div className="text-xs text-gray-400 mt-1">{award.detail(award.winner)}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-3 mb-4">
+                      {extraAwardCards.map((award) => {
+                        const bot = BOT[tourBots[award.winner.idx]];
+                        return (
+                          <div key={award.key} className="rounded-xl border border-gray-800 bg-gray-950/60 p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: award.accent }}>{award.title}</div>
+                                <div className="text-xs text-gray-500 mt-1">{award.subtitle}</div>
+                              </div>
+                              <div className="text-xl">{award.emoji}</div>
+                            </div>
+                            <div className="mt-2 text-sm font-semibold" style={{ color: bot.color }}>{bot.emoji} {bot.name}</div>
+                            <div className="text-xs text-gray-400 mt-1">{award.detail(award.winner)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {noRiskBots.length > 0 && (
+                      <div className="mb-4 rounded-xl border border-slate-800 bg-slate-950/40 px-3 py-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-300">No se arriesga</div>
+                            <div className="text-xs text-gray-500 mt-1">Bots que terminaron el torneo con 0 chinchones.</div>
+                          </div>
+                          <div className="text-xl">🧱</div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {noRiskBots.map((entry) => {
+                            const bot = BOT[tourBots[entry.idx]];
+                            return (
+                              <div key={entry.idx} className="rounded-full border border-gray-800 bg-gray-900/80 px-3 py-1.5 text-xs">
+                                <span style={{ color: bot.color }}>{bot.emoji} {bot.name}</span>
+                                <span className="text-gray-500"> · 0 chinchones</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {lostToEveryoneAward && (
+                      <div className="mb-4 rounded-xl border border-rose-900/60 bg-rose-950/20 px-3 py-3 text-center">
+                        <div className="text-[11px] text-rose-300 uppercase tracking-[0.18em] mb-1">Bolsa de boxeo</div>
+                        <div className="text-sm text-gray-200">
+                          💀 Perdio contra todos y termino como sparring oficial del torneo:{" "}
+                          <span style={{ color: BOT[tourBots[lostToEveryoneAward.idx]].color }}>
+                            {BOT[tourBots[lostToEveryoneAward.idx]].emoji} {BOT[tourBots[lostToEveryoneAward.idx]].name}
+                          </span>
+                        </div>
+                        <div className="text-xs text-rose-200/70 mt-1">No suma puntos. Solo queda la gastada para la posteridad.</div>
+                      </div>
+                    )}
+                    <div className="mt-3 rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-gray-950 to-emerald-500/10 px-4 py-4 text-center">
+                      <div className="text-[11px] text-gray-500 uppercase tracking-[0.2em] mb-1">Campeon absoluto</div>
+                      <div className="text-base font-extrabold" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
+                        {BOT[tourBots[ceremonyChampion.idx]].emoji} {BOT[tourBots[ceremonyChampion.idx]].name}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        Se lleva el titulo por sumar mas puntos de premios. Si hay empate, desempatan victorias totales, espejo y chinchones.
+                      </div>
+                      <div className="grid sm:grid-cols-4 gap-2 mt-3 text-xs">
+                        <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-2">
+                          <div className="text-gray-500">Mayor ganador</div>
+                          <div className="font-mono mt-1" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
+                            {ceremonyChampion.winsPoints > 0 ? `+${ceremonyChampion.winsPoints}` : "0"}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-2">
+                          <div className="text-gray-500">Aura</div>
+                          <div className="font-mono mt-1" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
+                            {ceremonyChampion.auraPoints > 0 ? `+${ceremonyChampion.auraPoints}` : "0"}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-2">
+                          <div className="text-gray-500">Letalidad</div>
+                          <div className="font-mono mt-1" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
+                            {ceremonyChampion.mirrorPoints > 0 ? `+${ceremonyChampion.mirrorPoints}` : "0"}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-gray-800 bg-gray-950/70 p-2">
+                          <div className="text-gray-500">Le gano a todos</div>
+                          <div className="font-mono mt-1" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>
+                            {ceremonyChampion.beatAllPoints > 0 ? `+${ceremonyChampion.beatAllPoints}` : "0"}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-3">
+                        Puntaje total del campeon: <span className="font-mono" style={{ color: BOT[tourBots[ceremonyChampion.idx]].color }}>{ceremonyChampion.score}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">
+                  {isDone ? "Clasificación final" : "Clasificación parcial (3 fechas)"}
+                </h3>
+                <h4 className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">0) Puntos de premios</h4>
+                <div className="w-full mb-4 overflow-x-auto">
+                  <table className="w-full text-xs min-w-[420px]">
+                    <thead>
+                      <tr>
+                        <th className="text-left py-1 pr-3 text-gray-500 font-normal">Bot</th>
+                        <th className="text-center px-2 py-1 text-gray-500 font-normal">Mayor</th>
+                        <th className="text-center px-2 py-1 text-gray-500 font-normal">Letal</th>
+                        <th className="text-center px-2 py-1 text-gray-500 font-normal">Aura</th>
+                        <th className="text-center px-2 py-1 text-gray-500 font-normal">Le gano a todos</th>
+                        <th className="text-center px-2 py-1 text-gray-300 font-medium">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ceremonyRanking.map((r, pos) => {
+                        const bot = BOT[tourBots[r.idx]];
+                        return (
+                          <tr key={r.idx} className="border-t border-gray-800">
+                            <td className="py-2 pr-3 font-medium" style={{ color: bot.color }}>
+                              <span className="inline-flex items-center gap-2">
+                                <span>{medals[pos]}</span>
+                                <span>{bot.emoji} {bot.name}</span>
+                              </span>
+                            </td>
+                            <td className="text-center py-2 font-mono" style={{ color: r.winsPoints > 0 ? bot.color : "#6b7280" }}>
+                              {r.winsPoints}
+                            </td>
+                            <td className="text-center py-2 font-mono" style={{ color: r.mirrorPoints > 0 ? bot.color : "#6b7280" }}>
+                              {r.mirrorPoints}
+                            </td>
+                            <td className="text-center py-2 font-mono" style={{ color: r.auraPoints > 0 ? bot.color : "#6b7280" }}>
+                              {r.auraPoints}
+                            </td>
+                            <td className="text-center py-2 font-mono" style={{ color: r.beatAllPoints > 0 ? bot.color : "#6b7280" }}>
+                              {r.beatAllPoints}
+                            </td>
+                            <td className="text-center py-2 font-bold font-mono" style={{ color: bot.color }}>
+                              {r.score}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <h4 className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">1) Victorias totales</h4>
+                <div className="flex flex-col gap-2.5 mb-4">
+                  {rankingWins.map((r, pos) => {
+                    const bot = BOT[tourBots[r.idx]];
+                    const barW = r.games > 0 ? Math.max(2, Math.min(100, r.winPct * 2 - 50)) : 2;
+                    return (
+                      <div key={r.idx} className="flex items-center gap-2">
+                        <span className="text-base w-7 text-center shrink-0">{medals[pos]}</span>
+                        <span className="w-28 text-xs font-semibold shrink-0" style={{ color: bot.color }}>{bot.emoji} {bot.name}</span>
+                        <div className="flex-1 h-5 bg-gray-800 rounded overflow-hidden">
+                          <div className="h-full rounded transition-all duration-300"
+                            style={{ width: `${barW}%`, background: bot.color + "99" }} />
+                        </div>
+                        <span className="text-xs font-mono w-24 text-right shrink-0" style={{ color: bot.color }}>
+                          {r.games > 0 ? `${r.wins} (${r.winPct.toFixed(2)}%)` : "..."}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <h4 className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">2) Victorias espejo</h4>
+                <div className="flex flex-col gap-2.5 mb-4">
+                  {rankingMirror.map((r, pos) => {
+                    const bot = BOT[tourBots[r.idx]];
+                    const barW = r.mirrorPairs > 0 ? Math.max(2, Math.min(100, r.mirrorPct)) : 2;
+                    return (
+                      <div key={r.idx} className="flex items-center gap-2">
+                        <span className="text-base w-7 text-center shrink-0">{medals[pos]}</span>
+                        <span className="w-28 text-xs font-semibold shrink-0" style={{ color: bot.color }}>{bot.emoji} {bot.name}</span>
+                        <div className="flex-1 h-5 bg-gray-800 rounded overflow-hidden">
+                          <div className="h-full rounded transition-all duration-300" style={{ width: `${barW}%`, background: bot.color + "99" }} />
+                        </div>
+                        <span className="text-xs font-mono w-24 text-right shrink-0" style={{ color: bot.color }}>
+                          {r.mirrorPairs > 0 ? `${r.mirrorWins} (${r.mirrorPct.toFixed(2)}%)` : "..."}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <h4 className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">3) Chinchones (% de victorias)</h4>
+                <div className="flex flex-col gap-2.5">
+                  {rankingChinchon.map((r, pos) => {
+                    const bot = BOT[tourBots[r.idx]];
+                    const barW = r.wins > 0 ? Math.max(2, Math.min(100, r.rate)) : 2;
+                    return (
+                      <div key={r.idx} className="flex items-center gap-2">
+                        <span className="text-base w-7 text-center shrink-0">{medals[pos]}</span>
+                        <span className="w-28 text-xs font-semibold shrink-0" style={{ color: bot.color }}>{bot.emoji} {bot.name}</span>
+                        <div className="flex-1 h-5 bg-gray-800 rounded overflow-hidden">
+                          <div className="h-full rounded transition-all duration-300" style={{ width: `${barW}%`, background: bot.color + "99" }} />
+                        </div>
+                        <span className="text-xs font-mono w-28 text-right shrink-0" style={{ color: bot.color }}>
+                          {r.wins > 0 ? `${r.chinchones} (${r.rate.toFixed(2)}%)` : "..."}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {!isDone && tourRunning && (
+                  <p className="text-xs text-gray-600 text-center mt-3">Resultados parciales por fecha — el torneo sigue corriendo</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-5 text-center text-sm text-gray-500 mb-4">
+              Iniciá el torneo para ver matrices, ranking y resultados acumulados.
+            </div>
+          )
         )}
       </div>
     );
@@ -2463,6 +2833,7 @@ return (
           setCustomConfigs(prev => {
             const idx = prev.findIndex(c => c.id === cfg.id);
             if (idx >= 0) { const next = [...prev]; next[idx] = cfg; return next; }
+            if (prev.length >= MAX_CUSTOM_BOTS) return prev;
             return [...prev, cfg];
           });
           setEditingBot(null);
@@ -2478,27 +2849,8 @@ return (
             </button>
           </div>
 
-          {/* Built-in bots */}
-          <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Preconstruidos</p>
-          <div className="flex flex-wrap gap-2 justify-center mb-5">
-            {BUILTIN_BOT_CONFIGS.map(cfg => (
-              <div key={cfg.id} className={`${cfg.bg} border ${cfg.border} rounded-lg px-4 py-3 w-44`}>
-                <div className="font-bold text-sm mb-0.5" style={{ color: cfg.color }}>{cfg.emoji} {cfg.name}</div>
-                <div className="text-gray-500 text-xs mb-2 leading-tight min-h-[2rem]">
-                  {showDescMode === "desc"
-                    ? (cfg.description || <span className="italic text-gray-600">{generateDesc(cfg)}</span>)
-                    : generateDesc(cfg)}
-                </div>
-                <button onClick={() => setViewingBot(cfg)}
-                  className="text-xs text-gray-400 hover:text-gray-200 bg-gray-900/60 px-2 py-0.5 rounded transition-colors">
-                  Ver config
-                </button>
-              </div>
-            ))}
-          </div>
-
           {/* Custom bots */}
-          <div className="border-t border-gray-800 pt-4 mb-4">
+          <div className="mb-5">
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs text-gray-600 uppercase tracking-wider">Mis bots</p>
               <div className="flex gap-1.5">
@@ -2506,13 +2858,16 @@ return (
                   className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2.5 py-1 rounded border border-gray-700 hover:border-gray-600 transition-colors">
                   {showImport ? "Cancelar" : "Importar"}
                 </button>
-                {customConfigs.length < 4 && (
+                {customConfigs.length < MAX_CUSTOM_BOTS && (
                   <button onClick={() => setEditingBot(DEFAULT_CUSTOM_CONFIG())}
                     className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-semibold active:scale-95 transition-all">
                     + Nuevo
                   </button>
                 )}
               </div>
+            </div>
+            <div className="text-xs text-gray-500 mb-3 text-center">
+              Tus bots custom se guardan automáticamente en este navegador. Máximo {MAX_CUSTOM_BOTS}.
             </div>
             {showImport && (
               <div className="mb-3 bg-gray-900 border border-gray-700 rounded-lg p-3">
@@ -2526,7 +2881,7 @@ return (
                   try { raw = JSON.parse(importText); } catch { setImportError("JSON inválido"); return; }
                   const cfg = sanitizeImportConfig(raw);
                   if (!cfg) { setImportError("Configuración inválida o incompleta"); return; }
-                  if (customConfigs.length >= 4) { setImportError("Ya tenés 4 bots custom (máximo)"); return; }
+                  if (customConfigs.length >= MAX_CUSTOM_BOTS) { setImportError(`Ya tenés ${MAX_CUSTOM_BOTS} bots custom (máximo)`); return; }
                   setCustomConfigs(prev => [...prev, cfg]);
                   setShowImport(false); setImportText("");
                 }} className="mt-2 bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">
@@ -2586,9 +2941,30 @@ return (
                 })}
               </div>
             )}
-            {customConfigs.length >= 4 && (
-              <div className="text-xs text-gray-600 text-center mt-3">Máximo 4 bots custom</div>
+            {customConfigs.length >= MAX_CUSTOM_BOTS && (
+              <div className="text-xs text-gray-600 text-center mt-3">Máximo {MAX_CUSTOM_BOTS} bots custom</div>
             )}
+          </div>
+
+          {/* Built-in bots */}
+          <div className="border-t border-gray-800 pt-4 mb-4">
+            <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Preconstruidos</p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {BUILTIN_BOT_CONFIGS.map(cfg => (
+                <div key={cfg.id} className={`${cfg.bg} border ${cfg.border} rounded-lg px-4 py-3 w-44`}>
+                  <div className="font-bold text-sm mb-0.5" style={{ color: cfg.color }}>{cfg.emoji} {cfg.name}</div>
+                  <div className="text-gray-500 text-xs mb-2 leading-tight min-h-[2rem]">
+                    {showDescMode === "desc"
+                      ? (cfg.description || <span className="italic text-gray-600">{generateDesc(cfg)}</span>)
+                      : generateDesc(cfg)}
+                  </div>
+                  <button onClick={() => setViewingBot(cfg)}
+                    className="text-xs text-gray-400 hover:text-gray-200 bg-gray-900/60 px-2 py-0.5 rounded transition-colors">
+                    Ver config
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
