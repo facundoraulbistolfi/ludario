@@ -1668,7 +1668,19 @@ return (
 
   <div className="flex gap-0.5 bg-gray-900 rounded-lg p-1 mb-4">
     {[["sim", "Simulación"], ["torneo", "Torneo"], ["match", "Ver Partida"], ["play", "Jugar"], ["custom", "Bots"], ["reglas", "Reglas"]].map(([k, l]) => (
-      <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>{l}</button>
+      <button key={k} onClick={() => {
+        // Stop and clear sim
+        stopRef.current = true;
+        setSimRun(false); setProg(0); setChartData(null);
+        setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
+        setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]);
+        setPromptCopied(false); setNewBotPromptCopied(false);
+        // Stop and clear tournament
+        stopTourRef.current = true;
+        setTourRunning(false); setTourProgress(0); setTourCurrentPair(null);
+        setTourCurrentStats(null); setTourResults(null);
+        setTab(k);
+      }} className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${tab === k ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}>{l}</button>
     ))}
   </div>
 
