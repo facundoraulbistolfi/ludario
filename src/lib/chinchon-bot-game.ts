@@ -19,10 +19,22 @@ export type RoundResult = {
   chinchon: boolean;
 };
 
+export type CutContext = {
+  opponentScore: number;
+  ownDraws: number;
+  opponentDraws: number;
+};
+
+export type DrawCriterion = {
+  type: "reduce_free" | "reduce_resto_threshold" | "reduce_resto_any";
+  enabled: boolean;
+  threshold?: number;
+};
+
 export type Strategy = {
   pickDiscard: (hand: Card[]) => number;
-  canCut: (m7: MeldResult, score: number, hand: Card[]) => boolean;
-  drawConfig?: { mode: string; restoThreshold?: number };
+  canCut: (m7: MeldResult, score: number, hand: Card[], ctx?: CutContext) => boolean;
+  drawConfig?: { mode?: string; restoThreshold?: number; criteria?: DrawCriterion[] };
 };
 
 // Constants
@@ -168,6 +180,20 @@ export function shouldDrawDiscard(hand: Card[], top: Card, botObj: Strategy): bo
   if (!top) return false;
   const dc = botObj.drawConfig;
   if (!dc) return false;
+
+  if (dc.criteria) {
+    const b7 = findBestMelds(hand);
+    const t2 = [...hand, { ...top }];
+    const a8 = findBestMelds(t2);
+    for (const c of dc.criteria) {
+      if (!c.enabled) continue;
+      if (c.type === "reduce_free" && a8.minFree < b7.minFree) return true;
+      if (c.type === "reduce_resto_threshold" && a8.resto < b7.resto - (c.threshold ?? 3)) return true;
+      if (c.type === "reduce_resto_any" && a8.resto < b7.resto) return true;
+    }
+    return false;
+  }
+
   if (dc.mode === "always_deck") return false;
   const b7 = findBestMelds(hand);
   const t2 = [...hand, { ...top }];
@@ -197,7 +223,8 @@ export function playRoundScored(
     const wi = legalDiscardIndex(h[0], st[0].pickDiscard(h[0]));
     const disc = h[0].splice(wi, 1)[0]; dp.push(disc);
     const m7 = findBestMelds(h[0]);
-    if (st[0].canCut(m7, scores[0], h[0])) {
+    const ctx0: CutContext = { opponentScore: scores[1], ownDraws: dr[0], opponentDraws: dr[1] };
+    if (st[0].canCut(m7, scores[0], h[0], ctx0)) {
       const cs = cutScore(h[0]); const other = findBestMelds(h[1]);
       return { winner: 0, cards: 0, addScores: [cs.score, other.resto], chinchon: cs.chinchon };
     }
@@ -205,7 +232,8 @@ export function playRoundScored(
   // Player 1 can cut with their initial 7 cards before their first turn
   {
     const m7 = findBestMelds(h[1]);
-    if (st[1].canCut(m7, scores[1], h[1])) {
+    const ctx1: CutContext = { opponentScore: scores[0], ownDraws: dr[1], opponentDraws: dr[0] };
+    if (st[1].canCut(m7, scores[1], h[1], ctx1)) {
       const cs = cutScore(h[1]); const other = findBestMelds(h[0]);
       return { winner: 1, cards: 0, addScores: [other.resto, cs.score], chinchon: cs.chinchon };
     }
@@ -223,7 +251,8 @@ export function playRoundScored(
     dp.push(disc);
     if (kept) dr[p]++;
     const m7 = findBestMelds(h[p]);
-    if (st[p].canCut(m7, scores[p], h[p])) {
+    const ctxP: CutContext = { opponentScore: scores[1 - p as 0 | 1], ownDraws: dr[p], opponentDraws: dr[1 - p as 0 | 1] };
+    if (st[p].canCut(m7, scores[p], h[p], ctxP)) {
       const cs = cutScore(h[p]); const other = findBestMelds(h[1 - p as 0 | 1]);
       return {
         winner: p,

@@ -121,25 +121,57 @@ const CUSTOM_COLORS = [
 { color: "#c084fc", text: "text-purple-400", bg: "bg-purple-950", border: "border-purple-800" },
 ];
 const DEFAULT_SCORE_RULES = () => [{ minScore: 0, maxResto: 5 }, { minScore: 25, maxResto: 3 }, { minScore: 50, maxResto: 2 }, { minScore: 75, maxResto: 1 }];
+const DEFAULT_OPPONENT_SCORE_RULES = () => [{ minOpponentScore: 0, maxResto: 5 }, { minOpponentScore: 25, maxResto: 4 }, { minOpponentScore: 50, maxResto: 3 }, { minOpponentScore: 75, maxResto: 2 }];
+const DEFAULT_SCORE_DIFF_RULES = () => [{ minDiff: -75, maxResto: 5 }, { minDiff: -25, maxResto: 4 }, { minDiff: 0, maxResto: 3 }, { minDiff: 25, maxResto: 2 }];
+const DEFAULT_DRAW_CRITERIA = () => [
+{ type: "reduce_free", enabled: true },
+{ type: "reduce_resto_threshold", enabled: true, threshold: 3 },
+{ type: "reduce_resto_any", enabled: false },
+];
+const DEFAULT_DISCARD_CRITERIA = () => [
+{ type: "highest_value_free", enabled: true },
+{ type: "highest_rank", enabled: false },
+{ type: "optimal", enabled: false },
+];
 const DEFAULT_CUSTOM_CONFIG = () => ({
 id: "custom-" + Date.now(),
 name: "Mi Bot",
 emoji: "🧪",
 colorIdx: 0,
 description: "",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "default" },
-cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
+draw: { criteria: DEFAULT_DRAW_CRITERIA() },
+discard: { criteria: DEFAULT_DISCARD_CRITERIA() },
+cut: {
+  maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(),
+  pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false,
+  useOpponentScoreRules: false, opponentScoreRules: DEFAULT_OPPONENT_SCORE_RULES(),
+  useScoreDiffRules: false, scoreDiffRules: DEFAULT_SCORE_DIFF_RULES(),
+  useOpponentDrawsRule: false, opponentDrawsThreshold: 3, opponentDrawsMaxResto: 3,
+},
 });
 
 
 function buildCanCut(cut) {
-return (m7, score, hand) => {
+return (m7, score, hand, ctx) => {
 if (cut.pursueChinchon && nearChinchonCustom(hand, cut.chinchonThreshold ?? 6)) return m7.minFree === 0;
 if (cut.chinchonRunMode && has4RunSameSuit(hand)) return m7.minFree === 0;
-const maxR = cut.useScoreRules
+let maxR = cut.useScoreRules
 ? ([...cut.scoreRules].reverse().find(r => (score ?? 0) >= r.minScore)?.maxResto ?? cut.baseResto)
 : cut.baseResto;
+if (ctx) {
+  if (cut.useOpponentScoreRules && cut.opponentScoreRules) {
+    const oppR = [...cut.opponentScoreRules].reverse().find(r => (ctx.opponentScore ?? 0) >= r.minOpponentScore)?.maxResto ?? maxR;
+    maxR = Math.min(maxR, oppR);
+  }
+  if (cut.useScoreDiffRules && cut.scoreDiffRules) {
+    const diff = (ctx.opponentScore ?? 0) - (score ?? 0);
+    const diffR = [...cut.scoreDiffRules].reverse().find(r => diff >= r.minDiff)?.maxResto ?? maxR;
+    maxR = Math.min(maxR, diffR);
+  }
+  if (cut.useOpponentDrawsRule && (ctx.opponentDraws ?? 0) >= (cut.opponentDrawsThreshold ?? 3)) {
+    maxR = Math.min(maxR, cut.opponentDrawsMaxResto ?? 3);
+  }
+}
 return m7.minFree <= cut.maxFree && m7.resto <= Math.min(maxR, 5);
 };
 }
