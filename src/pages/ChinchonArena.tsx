@@ -2124,6 +2124,18 @@ return (
               </div>
             </div>
           )}
+          <div className="mt-3 pt-3 border-t border-gray-700">
+            <label className="text-gray-500 text-xs block mb-2">Simulaciones por enfrentamiento</label>
+            <div className="flex flex-wrap gap-1">
+              {[10, 50, 100, 500, 1000, 5000, 10000].map(n => (
+                <button key={n} onClick={() => setNumSims(n)} disabled={tourRunning}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-all disabled:opacity-40
+                    ${numSims === n ? "border-amber-500 text-amber-400 bg-amber-500/10" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}>
+                  {n >= 1000 ? `${n / 1000}k` : n}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Start/Stop */}
