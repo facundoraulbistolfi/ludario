@@ -176,12 +176,48 @@ return m7.minFree <= cut.maxFree && m7.resto <= Math.min(maxR, 5);
 };
 }
 
+function drawModeToCriteria(draw) {
+if (!draw) return DEFAULT_DRAW_CRITERIA();
+if (draw.criteria) return draw.criteria;
+const mode = draw.mode;
+const threshold = draw.restoThreshold ?? 3;
+return [
+{ type: "reduce_free", enabled: mode !== "always_deck" },
+{ type: "reduce_resto_threshold", enabled: mode === "smart", threshold },
+{ type: "reduce_resto_any", enabled: mode === "aggressive" },
+];
+}
+
+function discardModeToCriteria(discard) {
+if (!discard) return DEFAULT_DISCARD_CRITERIA();
+if (discard.criteria) return discard.criteria;
+const mode = discard.mode;
+return [
+{ type: "highest_value_free", enabled: mode === "default" || !mode },
+{ type: "highest_rank", enabled: mode === "high_rank" },
+{ type: "optimal", enabled: mode === "optimal" },
+];
+}
+
+function buildPickDiscardFromCriteria(criteria) {
+const firstEnabled = criteria?.find(c => c.enabled);
+if (!firstEnabled) return defaultDiscard;
+if (firstEnabled.type === "optimal") return angryDiscard;
+if (firstEnabled.type === "highest_rank") return taiDiscard;
+return defaultDiscard;
+}
+
 function generateDesc(cfg) {
 const parts = [];
-const dm = { always_deck: "Solo mazo", smart: "Robo inteligente", aggressive: "Robo agresivo" };
-parts.push(dm[cfg.draw.mode] || "Robo inteligente");
-const dd = { default: "Desc. por valor", high_rank: "Desc. por rango", optimal: "Desc. óptimo" };
-parts.push(dd[cfg.discard.mode] || "Desc. por valor");
+const drawCriteria = drawModeToCriteria(cfg.draw);
+const enabledDraw = drawCriteria.filter(c => c.enabled);
+if (enabledDraw.length === 0) parts.push("Solo mazo");
+else if (enabledDraw.some(c => c.type === "reduce_resto_any")) parts.push("Robo agresivo");
+else parts.push("Robo inteligente");
+const discardCriteria = discardModeToCriteria(cfg.discard);
+const firstDiscard = discardCriteria.find(c => c.enabled);
+const dd = { highest_value_free: "Desc. por valor", highest_rank: "Desc. por rango", optimal: "Desc. óptimo" };
+parts.push(dd[firstDiscard?.type] || "Desc. por valor");
 if (cfg.cut.useScoreRules) parts.push("Corte adaptativo");
 else parts.push("Corte ≤" + cfg.cut.baseResto);
 if (cfg.cut.chinchonRunMode) parts.push("🏃corrida");
@@ -194,14 +230,16 @@ const color = cfg.color ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].co
 const text = cfg.text ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].text;
 const bg = cfg.bg ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].bg;
 const border = cfg.border ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].border;
+const discardCriteria = discardModeToCriteria(cfg.discard);
+const drawCriteria = drawModeToCriteria(cfg.draw);
 return {
 id: cfg.id, name: cfg.name, emoji: cfg.emoji,
 color, text, bg, border,
 desc: generateDesc(cfg), description: cfg.description ?? "",
-custom: !cfg.color, // color field present = builtin
-drawConfig: cfg.draw,
+custom: !cfg.color,
+drawConfig: { criteria: drawCriteria },
 canCut: buildCanCut(cfg.cut),
-pickDiscard: cfg.discard.mode === "high_rank" ? taiDiscard : cfg.discard.mode === "optimal" ? angryDiscard : defaultDiscard,
+pickDiscard: buildPickDiscardFromCriteria(discardCriteria),
 };
 }
 
@@ -214,21 +252,29 @@ if (!raw.draw || !raw.discard || !raw.cut) return null;
 const draw = raw.draw ?? {};
 const discard = raw.discard ?? {};
 const cut = raw.cut ?? {};
+// Accept both old mode-based and new criteria-based formats
 const validDraw = ["always_deck", "smart", "aggressive"];
 const validDiscard = ["default", "high_rank", "optimal"];
-if (!validDraw.includes(draw.mode)) return null;
-if (!validDiscard.includes(discard.mode)) return null;
+const hasOldDraw = validDraw.includes(draw.mode);
+const hasNewDraw = Array.isArray(draw.criteria);
+const hasOldDiscard = validDiscard.includes(discard.mode);
+const hasNewDiscard = Array.isArray(discard.criteria);
+if (!hasOldDraw && !hasNewDraw) return null;
+if (!hasOldDiscard && !hasNewDiscard) return null;
+const sanitizedDraw = hasNewDraw
+? { criteria: draw.criteria.map(c => ({ type: c.type, enabled: Boolean(c.enabled), ...(c.threshold !== undefined ? { threshold: Math.min(Math.max(1, Math.floor(c.threshold)), 10) } : {}) })) }
+: { mode: draw.mode, restoThreshold: typeof draw.restoThreshold === "number" ? Math.min(Math.max(1, Math.floor(draw.restoThreshold)), 10) : 3 };
+const sanitizedDiscard = hasNewDiscard
+? { criteria: discard.criteria.map(c => ({ type: c.type, enabled: Boolean(c.enabled) })) }
+: { mode: discard.mode };
 return {
 id: "custom-" + Date.now(),
 name: String(raw.name).slice(0, 12).trim(),
 emoji: CUSTOM_EMOJIS.includes(String(raw.emoji)) ? String(raw.emoji) : "🧪",
 colorIdx: typeof raw.colorIdx === "number" ? Math.min(Math.max(0, Math.floor(raw.colorIdx)), CUSTOM_COLORS.length - 1) : 0,
 description: typeof raw.description === "string" ? raw.description.slice(0, 120) : "",
-draw: {
-mode: draw.mode,
-restoThreshold: typeof draw.restoThreshold === "number" ? Math.min(Math.max(1, Math.floor(draw.restoThreshold)), 10) : 3,
-},
-discard: { mode: discard.mode },
+draw: sanitizedDraw,
+discard: sanitizedDiscard,
 cut: {
 maxFree: typeof cut.maxFree === "number" ? Math.min(Math.max(0, Math.floor(cut.maxFree)), 1) : 1,
 baseResto: Math.min(Math.max(0, Math.floor(cut.baseResto ?? 5)), 5),
@@ -239,6 +285,17 @@ scoreRules: Array.isArray(cut.scoreRules)
 pursueChinchon: Boolean(cut.pursueChinchon),
 chinchonThreshold: [5, 6].includes(cut.chinchonThreshold) ? cut.chinchonThreshold : 6,
 chinchonRunMode: Boolean(cut.chinchonRunMode),
+useOpponentScoreRules: Boolean(cut.useOpponentScoreRules),
+opponentScoreRules: Array.isArray(cut.opponentScoreRules)
+? DEFAULT_OPPONENT_SCORE_RULES().map((def, i) => ({ minOpponentScore: def.minOpponentScore, maxResto: Math.min(Math.max(0, Math.floor(cut.opponentScoreRules[i]?.maxResto ?? def.maxResto)), 5) }))
+: DEFAULT_OPPONENT_SCORE_RULES(),
+useScoreDiffRules: Boolean(cut.useScoreDiffRules),
+scoreDiffRules: Array.isArray(cut.scoreDiffRules)
+? DEFAULT_SCORE_DIFF_RULES().map((def, i) => ({ minDiff: def.minDiff, maxResto: Math.min(Math.max(0, Math.floor(cut.scoreDiffRules[i]?.maxResto ?? def.maxResto)), 5) }))
+: DEFAULT_SCORE_DIFF_RULES(),
+useOpponentDrawsRule: Boolean(cut.useOpponentDrawsRule),
+opponentDrawsThreshold: typeof cut.opponentDrawsThreshold === "number" ? Math.min(Math.max(1, Math.floor(cut.opponentDrawsThreshold)), 5) : 3,
+opponentDrawsMaxResto: typeof cut.opponentDrawsMaxResto === "number" ? Math.min(Math.max(0, Math.floor(cut.opponentDrawsMaxResto)), 5) : 3,
 },
 };
 }
@@ -660,16 +717,27 @@ stroke={v === 50 ? "#4b5563" : "#1f2937"} strokeWidth={v === 50 ? 1 : 0.5} strok
 
 /* -- Prompt helpers -- */
 function botConfigToPromptText(cfg) {
-const drawDescs = {
-always_deck: "solo roba del mazo (nunca del descarte)",
-smart: `roba del descarte si reduce el resto en más de ${cfg.draw?.restoThreshold ?? 3} pts`,
-aggressive: "roba del descarte ante cualquier mejora de resto",
-};
+const drawCriteria = drawModeToCriteria(cfg.draw);
+const enabledDraw = drawCriteria.filter(c => c.enabled);
+let drawDesc;
+if (enabledDraw.length === 0) drawDesc = "solo roba del mazo (nunca del descarte)";
+else {
+const parts = enabledDraw.map(c => {
+if (c.type === "reduce_free") return "toma si reduce cartas sueltas";
+if (c.type === "reduce_resto_threshold") return `toma si reduce el resto en más de ${c.threshold ?? 3} pts`;
+if (c.type === "reduce_resto_any") return "toma ante cualquier mejora de resto";
+return c.type;
+});
+drawDesc = parts.join("; ");
+}
+const discardCriteria = discardModeToCriteria(cfg.discard);
+const firstDiscard = discardCriteria.find(c => c.enabled);
 const discardDescs = {
-default: "descarta la carta suelta de mayor valor en puntos",
-high_rank: "descarta siempre la carta con número más alto",
+highest_value_free: "descarta la carta suelta de mayor valor en puntos",
+highest_rank: "descarta siempre la carta con número más alto",
 optimal: "evalúa las 8 opciones de descarte y elige la que deja la mejor mano",
 };
+const discardDesc = discardDescs[firstDiscard?.type] ?? "descarta la carta suelta de mayor valor en puntos";
 let cutDesc;
 if (cfg.cut?.useScoreRules && cfg.cut?.scoreRules) {
 const rules = cfg.cut.scoreRules.map(r => `${r.minScore}+ pts → resto ≤ ${r.maxResto}`).join(", ");
@@ -683,8 +751,8 @@ if (cfg.cut?.chinchonRunMode) extras.push("con corrida de 4+ cartas del mismo pa
 return [
 `${cfg.emoji} ${cfg.name}`,
 cfg.description ? `"${cfg.description}"` : null,
-`  Robo: ${drawDescs[cfg.draw?.mode] ?? cfg.draw?.mode}`,
-`  Descarte: ${discardDescs[cfg.discard?.mode] ?? cfg.discard?.mode}`,
+`  Robo: ${drawDesc}`,
+`  Descarte: ${discardDesc}`,
 `  Corte: ${cutDesc}`,
 extras.length ? `  Especial: ${extras.join("; ")}` : null,
 ].filter(Boolean).join("\n");
@@ -827,9 +895,40 @@ return a.suit - b.suit;
 });
 }
 
+/* -- Emoji Modal -- */
+function EmojiModal({ current, color, onSelect, onClose }) {
+return (
+<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={onClose}>
+<div className="bg-gray-900 border border-gray-700 rounded-xl p-4 mx-4 max-w-xs shadow-2xl" onClick={e => e.stopPropagation()}>
+<div className="flex items-center justify-between mb-3">
+<span className="text-sm font-bold text-gray-200">Elegir emoji</span>
+<button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-lg leading-none">×</button>
+</div>
+<div className="flex gap-1.5 flex-wrap">
+{CUSTOM_EMOJIS.map(e => (
+<button key={e} onClick={() => { onSelect(e); onClose(); }}
+className={`w-9 h-9 rounded-lg text-lg border transition-all ${current === e ? "border-2 scale-110" : "border-gray-700 hover:border-gray-500"}`}
+style={current === e ? { borderColor: color, background: `${color}15` } : { background: "#111827" }}>
+{e}
+</button>
+))}
+</div>
+</div>
+</div>
+);
+}
+
 /* -- Bot Editor sub-component -- */
 function BotEditor({ config, onSave, onCancel }) {
-const [cfg, setCfg] = useState(() => JSON.parse(JSON.stringify(config)));
+const [cfg, setCfg] = useState(() => {
+const c = JSON.parse(JSON.stringify(config));
+if (!c.draw.criteria) c.draw = { criteria: drawModeToCriteria(c.draw) };
+if (!c.discard.criteria) c.discard = { criteria: discardModeToCriteria(c.discard) };
+if (!c.cut.opponentScoreRules) c.cut.opponentScoreRules = DEFAULT_OPPONENT_SCORE_RULES();
+if (!c.cut.scoreDiffRules) c.cut.scoreDiffRules = DEFAULT_SCORE_DIFF_RULES();
+return c;
+});
+const [showEmojiModal, setShowEmojiModal] = useState(false);
 const upd = (path, val) => {
 const next = JSON.parse(JSON.stringify(cfg));
 const keys = path.split(".");
@@ -843,10 +942,73 @@ const next = JSON.parse(JSON.stringify(cfg));
 next.cut.scoreRules[idx].maxResto = val;
 setCfg(next);
 };
+const updOppRule = (idx, val) => {
+const next = JSON.parse(JSON.stringify(cfg));
+next.cut.opponentScoreRules[idx].maxResto = val;
+setCfg(next);
+};
+const updDiffRule = (idx, val) => {
+const next = JSON.parse(JSON.stringify(cfg));
+next.cut.scoreDiffRules[idx].maxResto = val;
+setCfg(next);
+};
+const moveDrawCriterion = (idx, dir) => {
+const next = JSON.parse(JSON.stringify(cfg));
+const arr = next.draw.criteria;
+const j = idx + dir;
+if (j < 0 || j >= arr.length) return;
+[arr[idx], arr[j]] = [arr[j], arr[idx]];
+setCfg(next);
+};
+const toggleDrawCriterion = (idx) => {
+const next = JSON.parse(JSON.stringify(cfg));
+next.draw.criteria[idx].enabled = !next.draw.criteria[idx].enabled;
+setCfg(next);
+};
+const updDrawThreshold = (idx, val) => {
+const next = JSON.parse(JSON.stringify(cfg));
+next.draw.criteria[idx].threshold = val;
+setCfg(next);
+};
+const moveDiscardCriterion = (idx, dir) => {
+const next = JSON.parse(JSON.stringify(cfg));
+const arr = next.discard.criteria;
+const j = idx + dir;
+if (j < 0 || j >= arr.length) return;
+[arr[idx], arr[j]] = [arr[j], arr[idx]];
+setCfg(next);
+};
+const toggleDiscardCriterion = (idx) => {
+const next = JSON.parse(JSON.stringify(cfg));
+next.discard.criteria[idx].enabled = !next.discard.criteria[idx].enabled;
+setCfg(next);
+};
 const c = CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length];
+
+const DRAW_LABELS = {
+reduce_free: "Reduce cartas sueltas",
+reduce_resto_threshold: "Mejora el resto en más de N pts",
+reduce_resto_any: "Mejora el resto (cualquier mejora)",
+};
+const DRAW_DESCS = {
+reduce_free: "Roba del descarte si la carta reduce la cantidad de cartas fuera de melds.",
+reduce_resto_threshold: null,
+reduce_resto_any: "Roba del descarte ante cualquier reducción del resto.",
+};
+const DISCARD_LABELS = {
+highest_value_free: "Mayor valor suelta",
+highest_rank: "Mayor rango numérico",
+optimal: "Óptimo (más lento)",
+};
+const DISCARD_DESCS = {
+highest_value_free: "Descarta la carta suelta con mayor valor en puntos.",
+highest_rank: "Descarta la carta con número más alto, aunque esté en un meld parcial.",
+optimal: "Evalúa las 8 posibles cartas a descartar y elige la que deja la mejor mano.",
+};
 
 return (
 <div className="w-full max-w-lg bg-gray-900 border border-gray-800 rounded-xl p-4">
+{showEmojiModal && <EmojiModal current={cfg.emoji} color={c.color} onSelect={e => upd("emoji", e)} onClose={() => setShowEmojiModal(false)} />}
 <h3 className="text-sm font-bold text-gray-200 mb-3">{config.id ? "Editar Bot" : "Nuevo Bot"}</h3>
 
 {/* Name + Emoji + Color */}
@@ -864,15 +1026,11 @@ className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-g
 </div>
 <div className="mb-4">
 <label className="text-xs text-gray-500 block mb-1">Emoji</label>
-<div className="flex gap-1.5 flex-wrap">
-{CUSTOM_EMOJIS.map(e => (
-<button key={e} onClick={() => upd("emoji", e)}
-className={`w-9 h-9 rounded-lg text-lg border transition-all ${cfg.emoji === e ? "border-2 scale-110" : "border-gray-700 hover:border-gray-500"}`}
-style={cfg.emoji === e ? { borderColor: c.color, background: `${c.color}15` } : { background: "#111827" }}>
-{e}
+<button onClick={() => setShowEmojiModal(true)}
+className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-700 hover:border-gray-500 bg-gray-800 text-sm text-gray-200 transition-colors">
+<span className="text-lg">{cfg.emoji}</span>
+<span className="text-gray-400">Cambiar</span>
 </button>
-))}
-</div>
 </div>
 <div className="mb-5">
 <label className="text-xs text-gray-500 block mb-1">Color</label>
@@ -888,54 +1046,59 @@ style={{ background: cc.color, borderColor: cfg.colorIdx === i ? "#fff" : cc.col
 {/* Draw */}
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
 <div className="text-xs font-bold mb-1" style={{ color: c.color }}>🃏 Estrategia de robo</div>
-<p className="text-xs text-gray-500 mb-2 leading-snug">¿Cuándo toma cartas del pozo de descarte en lugar del mazo?</p>
-<div className="flex flex-col gap-2">
-{([
-["always_deck", "Solo del mazo", "Nunca toma del descarte. Predecible, no revela qué cartas le sirven."],
-["smart", "Inteligente (umbral)", "Toma del descarte solo si reduce el resto más que el umbral configurado. Balanceado."],
-["aggressive", "Agresivo", "Toma del descarte ante cualquier mejora de resto. Reactivo y oportunista."],
-] as [string, string, string][]).map(([m, title, desc]) => (
-<label key={m} className="flex items-start gap-2 cursor-pointer">
-<input type="radio" name="draw" checked={cfg.draw.mode === m} onChange={() => upd("draw.mode", m)}
+<p className="text-xs text-gray-500 mb-2 leading-snug">¿Cuándo toma cartas del pozo de descarte? Se roba si CUALQUIER criterio activado se cumple. Orden: prioridad visual (arriba = más importante).</p>
+<div className="flex flex-col gap-1.5">
+{cfg.draw.criteria.map((cr, idx) => (
+<div key={cr.type} className="flex items-start gap-1.5 bg-gray-700/40 rounded p-2">
+<div className="flex flex-col gap-0.5 shrink-0 mt-0.5">
+<button onClick={() => moveDrawCriterion(idx, -1)} disabled={idx === 0}
+className="text-gray-500 hover:text-gray-300 disabled:opacity-20 leading-none text-xs">▲</button>
+<button onClick={() => moveDrawCriterion(idx, 1)} disabled={idx === cfg.draw.criteria.length - 1}
+className="text-gray-500 hover:text-gray-300 disabled:opacity-20 leading-none text-xs">▼</button>
+</div>
+<label className="flex items-start gap-2 cursor-pointer flex-1">
+<input type="checkbox" checked={cr.enabled} onChange={() => toggleDrawCriterion(idx)}
 className="accent-amber-500 mt-0.5 shrink-0" />
-<div>
-<span className={`text-sm ${cfg.draw.mode === m ? "text-gray-100 font-medium" : "text-gray-300"}`}>{title}</span>
-<p className="text-xs text-gray-500 leading-snug">{desc}</p>
-</div>
-</label>
-))}
-</div>
-{cfg.draw.mode === "smart" && (
-<div className="mt-3 border border-gray-600 rounded p-2">
-<div className="flex items-center gap-2">
-<span className="text-xs text-gray-400">Umbral de resto:</span>
-<input type="range" min={1} max={10} value={cfg.draw.restoThreshold} onChange={e => upd("draw.restoThreshold", +e.target.value)}
+<div className="flex-1">
+<span className={`text-sm ${cr.enabled ? "text-gray-100 font-medium" : "text-gray-400"}`}>{DRAW_LABELS[cr.type]}</span>
+{DRAW_DESCS[cr.type] && <p className="text-xs text-gray-500 leading-snug">{DRAW_DESCS[cr.type]}</p>}
+{cr.type === "reduce_resto_threshold" && (
+<div className="flex items-center gap-2 mt-1">
+<span className="text-xs text-gray-400">N =</span>
+<input type="range" min={1} max={10} value={cr.threshold ?? 3} onChange={e => updDrawThreshold(idx, +e.target.value)}
 className="flex-1 accent-amber-500" />
-<span className="text-xs font-mono text-amber-400 w-5 text-right">{cfg.draw.restoThreshold}</span>
-</div>
-<p className="text-xs text-gray-600 mt-1 leading-snug">Toma del descarte solo si reduce el resto en más de {cfg.draw.restoThreshold} pts. Mayor = más conservador.</p>
+<span className="text-xs font-mono text-amber-400 w-5 text-right">{cr.threshold ?? 3}</span>
 </div>
 )}
+</div>
+</label>
+</div>
+))}
+</div>
 </div>
 
 {/* Discard */}
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
 <div className="text-xs font-bold mb-1" style={{ color: c.color }}>🗑️ Estrategia de descarte</div>
-<p className="text-xs text-gray-500 mb-2 leading-snug">¿Qué carta elimina de su mano en cada turno?</p>
-<div className="flex flex-col gap-2">
-{([
-["default", "Por valor (recomendado)", "Descarta la carta suelta con mayor valor en puntos. Minimiza el resto de forma directa."],
-["high_rank", "Por rango numérico", "Descarta la carta con número más alto aunque forme parte de un meld parcial. Más agresivo."],
-["optimal", "Óptimo (más lento)", "Evalúa las 8 posibles cartas a descartar y elige la que deja la mejor mano. Más inteligente pero más costoso computacionalmente."],
-] as [string, string, string][]).map(([m, title, desc]) => (
-<label key={m} className="flex items-start gap-2 cursor-pointer">
-<input type="radio" name="discard" checked={cfg.discard.mode === m} onChange={() => upd("discard.mode", m)}
+<p className="text-xs text-gray-500 mb-2 leading-snug">¿Qué carta elimina de su mano en cada turno? Se usa el primer criterio activado.</p>
+<div className="flex flex-col gap-1.5">
+{cfg.discard.criteria.map((cr, idx) => (
+<div key={cr.type} className="flex items-start gap-1.5 bg-gray-700/40 rounded p-2">
+<div className="flex flex-col gap-0.5 shrink-0 mt-0.5">
+<button onClick={() => moveDiscardCriterion(idx, -1)} disabled={idx === 0}
+className="text-gray-500 hover:text-gray-300 disabled:opacity-20 leading-none text-xs">▲</button>
+<button onClick={() => moveDiscardCriterion(idx, 1)} disabled={idx === cfg.discard.criteria.length - 1}
+className="text-gray-500 hover:text-gray-300 disabled:opacity-20 leading-none text-xs">▼</button>
+</div>
+<label className="flex items-start gap-2 cursor-pointer flex-1">
+<input type="checkbox" checked={cr.enabled} onChange={() => toggleDiscardCriterion(idx)}
 className="accent-amber-500 mt-0.5 shrink-0" />
 <div>
-<span className={`text-sm ${cfg.discard.mode === m ? "text-gray-100 font-medium" : "text-gray-300"}`}>{title}</span>
-<p className="text-xs text-gray-500 leading-snug">{desc}</p>
+<span className={`text-sm ${cr.enabled ? "text-gray-100 font-medium" : "text-gray-400"}`}>{DISCARD_LABELS[cr.type]}</span>
+<p className="text-xs text-gray-500 leading-snug">{DISCARD_DESCS[cr.type]}</p>
 </div>
 </label>
+</div>
 ))}
 </div>
 </div>
@@ -976,8 +1139,8 @@ className="w-full accent-amber-500" />
 <input type="checkbox" checked={cfg.cut.useScoreRules} onChange={e => upd("cut.useScoreRules", e.target.checked)}
 className="accent-amber-500 mt-0.5 shrink-0" />
 <div>
-<span className={`text-sm ${cfg.cut.useScoreRules ? "text-gray-100 font-medium" : "text-gray-300"}`}>Corte adaptativo por puntaje</span>
-<p className="text-xs text-gray-500 leading-snug">Cambia el umbral de resto según los puntos acumulados. Permite estrategias más conservadoras cuando va ganando o más agresivas cuando pierde terreno.</p>
+<span className={`text-sm ${cfg.cut.useScoreRules ? "text-gray-100 font-medium" : "text-gray-300"}`}>Corte adaptativo por puntaje propio</span>
+<p className="text-xs text-gray-500 leading-snug">Cambia el umbral de resto según los puntos acumulados propios.</p>
 </div>
 </label>
 {cfg.cut.useScoreRules && (
@@ -991,6 +1154,84 @@ className="flex-1 accent-amber-500" />
 <span className="text-xs font-mono text-amber-400 w-5 text-right">{r.maxResto}</span>
 </div>
 ))}
+</div>
+)}
+</div>
+
+<div className="border-t border-gray-700 pt-3 mb-3">
+<label className="flex items-start gap-2 cursor-pointer">
+<input type="checkbox" checked={cfg.cut.useOpponentScoreRules ?? false} onChange={e => upd("cut.useOpponentScoreRules", e.target.checked)}
+className="accent-amber-500 mt-0.5 shrink-0" />
+<div>
+<span className={`text-sm ${cfg.cut.useOpponentScoreRules ? "text-gray-100 font-medium" : "text-gray-300"}`}>Regla por puntaje del oponente</span>
+<p className="text-xs text-gray-500 leading-snug">Adapta el umbral de corte según los puntos acumulados del oponente.</p>
+</div>
+</label>
+{cfg.cut.useOpponentScoreRules && (
+<div className="ml-5 flex flex-col gap-2 mt-3">
+{(cfg.cut.opponentScoreRules ?? DEFAULT_OPPONENT_SCORE_RULES()).map((r, i) => (
+<div key={i} className="flex items-center gap-2">
+<span className="text-xs text-gray-500 w-20 shrink-0">{r.minOpponentScore === 0 ? "0–24 pts" : r.minOpponentScore === 25 ? "25–49 pts" : r.minOpponentScore === 50 ? "50–74 pts" : "75+ pts"}:</span>
+<span className="text-xs text-gray-400 shrink-0">resto ≤</span>
+<input type="range" min={0} max={5} value={r.maxResto} onChange={e => updOppRule(i, +e.target.value)}
+className="flex-1 accent-amber-500" />
+<span className="text-xs font-mono text-amber-400 w-5 text-right">{r.maxResto}</span>
+</div>
+))}
+</div>
+)}
+</div>
+
+<div className="border-t border-gray-700 pt-3 mb-3">
+<label className="flex items-start gap-2 cursor-pointer">
+<input type="checkbox" checked={cfg.cut.useScoreDiffRules ?? false} onChange={e => upd("cut.useScoreDiffRules", e.target.checked)}
+className="accent-amber-500 mt-0.5 shrink-0" />
+<div>
+<span className={`text-sm ${cfg.cut.useScoreDiffRules ? "text-gray-100 font-medium" : "text-gray-300"}`}>Regla por diferencia de puntos</span>
+<p className="text-xs text-gray-500 leading-snug">Adapta el umbral según la diferencia de puntaje (oponente − propio).</p>
+</div>
+</label>
+{cfg.cut.useScoreDiffRules && (
+<div className="ml-5 flex flex-col gap-2 mt-3">
+{(cfg.cut.scoreDiffRules ?? DEFAULT_SCORE_DIFF_RULES()).map((r, i) => {
+const labels = ["Oponente ≥75 adelante", "Oponente 25–74 adelante", "Diferencia ≤24", "Yo ≥25 adelante"];
+return (
+<div key={i} className="flex items-center gap-2">
+<span className="text-xs text-gray-500 w-28 shrink-0">{labels[i]}:</span>
+<span className="text-xs text-gray-400 shrink-0">resto ≤</span>
+<input type="range" min={0} max={5} value={r.maxResto} onChange={e => updDiffRule(i, +e.target.value)}
+className="flex-1 accent-amber-500" />
+<span className="text-xs font-mono text-amber-400 w-5 text-right">{r.maxResto}</span>
+</div>
+);
+})}
+</div>
+)}
+</div>
+
+<div className="border-t border-gray-700 pt-3 mb-3">
+<label className="flex items-start gap-2 cursor-pointer">
+<input type="checkbox" checked={cfg.cut.useOpponentDrawsRule ?? false} onChange={e => upd("cut.useOpponentDrawsRule", e.target.checked)}
+className="accent-amber-500 mt-0.5 shrink-0" />
+<div>
+<span className={`text-sm ${cfg.cut.useOpponentDrawsRule ? "text-gray-100 font-medium" : "text-gray-300"}`}>Regla por robos del oponente</span>
+<p className="text-xs text-gray-500 leading-snug">Corta más agresivo cuando el oponente ha robado muchas cartas del descarte.</p>
+</div>
+</label>
+{cfg.cut.useOpponentDrawsRule && (
+<div className="ml-5 flex flex-col gap-2 mt-3">
+<div className="flex items-center gap-2">
+<span className="text-xs text-gray-500 w-28 shrink-0">Si robó ≥ N cartas:</span>
+<input type="range" min={1} max={5} value={cfg.cut.opponentDrawsThreshold ?? 3} onChange={e => upd("cut.opponentDrawsThreshold", +e.target.value)}
+className="flex-1 accent-amber-500" />
+<span className="text-xs font-mono text-amber-400 w-5 text-right">{cfg.cut.opponentDrawsThreshold ?? 3}</span>
+</div>
+<div className="flex items-center gap-2">
+<span className="text-xs text-gray-500 w-28 shrink-0">Resto máx. entonces:</span>
+<input type="range" min={0} max={5} value={cfg.cut.opponentDrawsMaxResto ?? 3} onChange={e => upd("cut.opponentDrawsMaxResto", +e.target.value)}
+className="flex-1 accent-amber-500" />
+<span className="text-xs font-mono text-amber-400 w-5 text-right">{cfg.cut.opponentDrawsMaxResto ?? 3}</span>
+</div>
 </div>
 )}
 </div>
@@ -1063,8 +1304,10 @@ const cfg = config;
 const color = cfg.color ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].color;
 const bg = cfg.bg ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].bg;
 const border = cfg.border ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].border;
-const drawLabels = { always_deck: "Solo del mazo", smart: "Inteligente (umbral)", aggressive: "Agresivo" };
-const discardLabels = { default: "Por valor", high_rank: "Por rango numérico", optimal: "Óptimo" };
+const drawCriteria = drawModeToCriteria(cfg.draw);
+const discardCriteria = discardModeToCriteria(cfg.discard);
+const DRAW_LABELS = { reduce_free: "Reduce cartas sueltas", reduce_resto_threshold: "Mejora el resto en más de N pts", reduce_resto_any: "Mejora el resto (cualquier mejora)" };
+const DISCARD_LABELS = { highest_value_free: "Mayor valor suelta", highest_rank: "Mayor rango numérico", optimal: "Óptimo" };
 
 return (
 <div className="w-full max-w-lg bg-gray-900 border border-gray-800 rounded-xl p-4">
@@ -1082,20 +1325,26 @@ return (
 
 <div className="mb-3 bg-gray-800 border border-gray-700 rounded-lg p-3">
 <div className="text-xs font-bold mb-2" style={{ color }}>🃏 Robo</div>
-<div className="text-sm text-gray-200 font-medium">{drawLabels[cfg.draw.mode] ?? cfg.draw.mode}</div>
-{cfg.draw.mode === "smart" && <p className="text-xs text-gray-500 mt-0.5">Umbral de resto: {cfg.draw.restoThreshold} pts</p>}
-{cfg.draw.mode === "aggressive" && <p className="text-xs text-gray-500 mt-0.5">Toma del descarte ante cualquier mejora de resto.</p>}
-{cfg.draw.mode === "always_deck" && <p className="text-xs text-gray-500 mt-0.5">Nunca toma del descarte.</p>}
+<div className="flex flex-col gap-1">
+{drawCriteria.map((cr, i) => (
+<div key={i} className={`text-xs flex items-center gap-1.5 ${cr.enabled ? "text-gray-200" : "text-gray-600"}`}>
+<span>{cr.enabled ? "✓" : "○"}</span>
+<span>{DRAW_LABELS[cr.type]}{cr.type === "reduce_resto_threshold" ? ` (N=${cr.threshold ?? 3})` : ""}</span>
+</div>
+))}
+</div>
 </div>
 
 <div className="mb-3 bg-gray-800 border border-gray-700 rounded-lg p-3">
 <div className="text-xs font-bold mb-2" style={{ color }}>🗑️ Descarte</div>
-<div className="text-sm text-gray-200 font-medium">{discardLabels[cfg.discard.mode] ?? cfg.discard.mode}</div>
-<p className="text-xs text-gray-500 mt-0.5">
-{cfg.discard.mode === "default" && "Descarta la carta suelta con mayor valor en puntos."}
-{cfg.discard.mode === "high_rank" && "Descarta la carta con número más alto, sin importar melds parciales."}
-{cfg.discard.mode === "optimal" && "Evalúa las 8 posibles cartas y elige la que deja la mejor mano."}
-</p>
+<div className="flex flex-col gap-1">
+{discardCriteria.map((cr, i) => (
+<div key={i} className={`text-xs flex items-center gap-1.5 ${cr.enabled ? "text-gray-200" : "text-gray-600"}`}>
+<span>{cr.enabled ? (i === discardCriteria.findIndex(c => c.enabled) ? "▶" : "·") : "○"}</span>
+<span>{DISCARD_LABELS[cr.type]}</span>
+</div>
+))}
+</div>
 </div>
 
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
@@ -1105,7 +1354,7 @@ return (
 {!cfg.cut.useScoreRules && <div className="text-gray-300">Resto máx: <span className="text-gray-100 font-medium">{cfg.cut.baseResto} pts</span></div>}
 {cfg.cut.useScoreRules && (
 <div>
-<div className="text-xs text-gray-500 mb-1">Corte adaptativo por puntaje:</div>
+<div className="text-xs text-gray-500 mb-1">Por puntaje propio:</div>
 <div className="flex flex-col gap-0.5">
 {cfg.cut.scoreRules.map((r, i) => (
 <div key={i} className="text-xs flex gap-2">
@@ -1115,6 +1364,38 @@ return (
 ))}
 </div>
 </div>
+)}
+{cfg.cut.useOpponentScoreRules && (
+<div>
+<div className="text-xs text-gray-500 mb-1">Por puntaje del oponente:</div>
+<div className="flex flex-col gap-0.5">
+{(cfg.cut.opponentScoreRules ?? DEFAULT_OPPONENT_SCORE_RULES()).map((r, i) => (
+<div key={i} className="text-xs flex gap-2">
+<span className="text-gray-500 w-20 shrink-0">{r.minOpponentScore === 0 ? "0–24 pts" : r.minOpponentScore === 25 ? "25–49 pts" : r.minOpponentScore === 50 ? "50–74 pts" : "75+ pts"}:</span>
+<span className="text-gray-300">resto ≤ <span className="text-gray-100 font-medium">{r.maxResto}</span></span>
+</div>
+))}
+</div>
+</div>
+)}
+{cfg.cut.useScoreDiffRules && (
+<div>
+<div className="text-xs text-gray-500 mb-1">Por diferencia de puntos:</div>
+<div className="flex flex-col gap-0.5">
+{(cfg.cut.scoreDiffRules ?? DEFAULT_SCORE_DIFF_RULES()).map((r, i) => {
+const labels = ["Oponente ≥75 adelante", "Oponente 25–74 adelante", "Diferencia ≤24", "Yo ≥25 adelante"];
+return (
+<div key={i} className="text-xs flex gap-2">
+<span className="text-gray-500 w-28 shrink-0">{labels[i]}:</span>
+<span className="text-gray-300">resto ≤ <span className="text-gray-100 font-medium">{r.maxResto}</span></span>
+</div>
+);
+})}
+</div>
+</div>
+)}
+{cfg.cut.useOpponentDrawsRule && (
+<div className="text-gray-300 text-xs">Si oponente robó ≥ <span className="text-gray-100 font-medium">{cfg.cut.opponentDrawsThreshold ?? 3}</span> cartas → resto máx <span className="text-gray-100 font-medium">{cfg.cut.opponentDrawsMaxResto ?? 3}</span></div>
 )}
 {cfg.cut.chinchonRunMode && <div className="text-gray-300">🏃 <span className="text-gray-100">Modo corrida</span> — con 4+ cartas del mismo palo consecutivas, espera el chinchón.</div>}
 {cfg.cut.pursueChinchon && <div className="text-gray-300">🎯 <span className="text-gray-100">Persigue chinchón</span> — umbral de {cfg.cut.chinchonThreshold ?? 6} cartas en posición.</div>}
