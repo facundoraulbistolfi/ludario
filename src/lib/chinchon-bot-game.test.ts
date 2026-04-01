@@ -376,10 +376,13 @@ describe("playRoundScored", () => {
     // making it 8. The strategy discards whichever card is not part of the chinchón run.
     const chinchonHand: Card[] = [c(1, 0), c(2, 0), c(3, 0), c(4, 0), c(5, 0), c(6, 0), c(7, 0)];
     const h1: Card[] = [c(10, 1), c(10, 2), c(10, 3), c(9, 1), c(9, 2), c(8, 1), c(11, 1)];
-    const deck = shuffle(createDeck().filter(card =>
+    const junkDraw = c(12, 3);
+    const deck = createDeck().filter(card =>
+      !sameCard(card, junkDraw) &&
       !chinchonHand.some(ch => sameCard(ch, card)) &&
       !h1.some(h => sameCard(h, card))
-    ));
+    );
+    deck.push(junkDraw);
 
     // Strategy: discard whichever card is not needed for chinchón, cut when chinchón is present
     const chinchonStrategy: Strategy = {
