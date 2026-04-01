@@ -1688,9 +1688,9 @@ return (
   {tab === "sim" && (
     <div className="flex flex-col items-center w-full max-w-2xl">
       <div className="flex flex-col gap-3 mb-4 w-full">
-        <BotPicker label="Bot 1" value={simB0} onChange={(v) => { setSimB0(v); if (v === simB1) setSimB1(BOT.findIndex((_, i) => i !== v)); }} exclude={simB1} />
+        <BotPicker label="Bot 1" value={simB0} onChange={(v) => { setSimB0(v); if (v === simB1) setSimB1(BOT.findIndex((_, i) => i !== v)); stopRef.current = true; setSimRun(false); setProg(0); setChartData(null); setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0); setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); }} exclude={simB1} />
         <div className="text-center text-gray-600 text-xs">vs</div>
-        <BotPicker label="Bot 2" value={simB1} onChange={(v) => { setSimB1(v); if (v === simB0) setSimB0(BOT.findIndex((_, i) => i !== v)); }} exclude={simB0} />
+        <BotPicker label="Bot 2" value={simB1} onChange={(v) => { setSimB1(v); if (v === simB0) setSimB0(BOT.findIndex((_, i) => i !== v)); stopRef.current = true; setSimRun(false); setProg(0); setChartData(null); setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0); setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); }} exclude={simB0} />
       </div>
       <div className="flex gap-3 mb-2 text-center text-xs text-gray-500">
         <div className="rounded-lg px-3 py-1.5 border" style={{ borderColor: BOT[simB0].color + "40", color: BOT[simB0].color }}>{BOT[simB0].emoji} {BOT[simB0].desc}</div>
