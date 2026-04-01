@@ -9,6 +9,14 @@ import {
   legalDiscardIndex, cutScore,
   shouldDrawDiscard, playRoundScored,
 } from "../lib/chinchon-bot-game";
+import {
+  MIN_SIMULATIONS_BEFORE_STABLE_STOP,
+  STABLE_SIMULATION_STREAK,
+  getChinchonWinRate,
+  getNextStableStreak,
+  getTruncatedWinRates,
+  getWinRates,
+} from "../lib/chinchon-sim-metrics";
 
 /* ==============================================================
 CARD ENGINE (UI-only constants)
@@ -662,7 +670,7 @@ function generateSimPrompt(cfg0, cfg1, metrics) {
 const { gameWins, roundWins, sweepWins, chinchonWins, totalRounds, numSims } = metrics;
 const total = gameWins[0] + gameWins[1];
 const totalPairs = sweepWins[0] + sweepWins[1] + sweepWins[2];
-return `Tengo dos bots de Chinchón (baraja española de 50 cartas, incluyendo 2 comodines) que corrieron ${numSims} simulaciones. Cada simulación es un par de partidas espejo (misma repartida, manos invertidas), dando ${total} partidas totales.
+return `Tengo dos bots de Chinchón (baraja española de 50 cartas, incluyendo 2 comodines) que corrieron ${totalPairs} simulaciones${totalPairs < numSims ? ` (corte antes del máximo configurado de ${numSims})` : ""}. Cada simulación es un par de partidas espejo (misma repartida, manos invertidas), dando ${total} partidas totales.
 
 REGLAS RELEVANTES:
 - 7 cartas por jugador. En su turno: roba del mazo o descarte, luego descarta 1.
@@ -679,12 +687,12 @@ ${botConfigToPromptText(cfg0)}
 BOT 2:
 ${botConfigToPromptText(cfg1)}
 
-RESULTADOS (${numSims} simulaciones = ${total} partidas totales):
+RESULTADOS (${totalPairs} simulaciones = ${total} partidas totales):
 - Partidas ganadas: ${cfg0.emoji} ${cfg0.name} ${gameWins[0]} (${((gameWins[0]/total)*100).toFixed(1)}%) vs ${cfg1.emoji} ${cfg1.name} ${gameWins[1]} (${((gameWins[1]/total)*100).toFixed(1)}%)
 - Rondas ganadas: ${cfg0.name} ${roundWins[0]} (${((roundWins[0]/totalRounds)*100).toFixed(1)}%) vs ${cfg1.name} ${roundWins[1]} (${((roundWins[1]/totalRounds)*100).toFixed(1)}%) — ${totalRounds} rondas totales
 - Promedio de rondas por partida: ${(totalRounds / total).toFixed(1)}
 - Doble espejo (gana ambas con misma repartida): ${cfg0.name} ${sweepWins[0]} (${((sweepWins[0]/totalPairs)*100).toFixed(1)}%), ${cfg1.name} ${sweepWins[1]} (${((sweepWins[1]/totalPairs)*100).toFixed(1)}%), empates ${sweepWins[2]}
-- Chinchones: ${cfg0.name} ${chinchonWins[0]} vs ${cfg1.name} ${chinchonWins[1]}
+- Chinchones: ${cfg0.name} ${chinchonWins[0]} (${getChinchonWinRate(chinchonWins[0], gameWins[0]).toFixed(1)}% de sus victorias) vs ${cfg1.name} ${chinchonWins[1]} (${getChinchonWinRate(chinchonWins[1], gameWins[1]).toFixed(1)}% de sus victorias)
 
 PREGUNTAS:
 1. ¿Por qué creés que el bot ganador tuvo esa ventaja? Explicá en términos de las mecánicas del juego.
@@ -1313,7 +1321,7 @@ const [roundWins, setRoundWins] = useState([0, 0]);
 const [gameWins, setGameWins] = useState([0, 0]);
 const [sweepWins, setSweepWins] = useState([0, 0, 0]); // [bot0 sweeps, bot1 sweeps, splits]
 const [totalRounds, setTotalRounds] = useState(0);
-const [winRateHistory, setWinRateHistory] = useState<{games: number, rate: number}[]>([]);
+const [winRateHistory, setWinRateHistory] = useState<{simulations: number, rate0: number, rate1: number}[]>([]);
 const [sweepRateHistory, setSweepRateHistory] = useState<{pairs: number, rate0: number, rate1: number}[]>([]);
 const [chinchonWins, setChinchonWins] = useState([0, 0]);
 const [simRun, setSimRun] = useState(false);
@@ -1340,6 +1348,7 @@ const [stabilizeDecimals, setStabilizeDecimals] = useState(1);
 // Stabilization config — Tournament
 const [tourUseStabilized, setTourUseStabilized] = useState(true);
 const [tourStabilizeDecimals, setTourStabilizeDecimals] = useState(1);
+const [tourMatrixView, setTourMatrixView] = useState<"percent" | "absolute">("percent");
 
 // Match viewer
 const [mvB0, setMvB0] = useState(0);
@@ -1362,71 +1371,18 @@ stopRef.current = false; setSimRun(true); setProg(0); setChartData(null);
 setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
 setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); setPromptCopied(false);
 const fd = {}, dd = {}; let rw0 = 0, rw1 = 0, gw0 = 0, gw1 = 0, sw0 = 0, sw1 = 0, splits = 0, tr = 0, cc0 = 0, cc1 = 0, done = 0;
-const wrSnaps: {games: number, rate: number}[] = [];
+const wrSnaps: {simulations: number, rate0: number, rate1: number}[] = [];
 const swSnaps: {pairs: number, rate0: number, rate1: number}[] = [];
 const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
 const MAX_SIMS = numSims;
+let lastStableRates = null;
+let stableStreak = 0;
 const tick = () => {
 if (stopRef.current) { setSimRun(false); return; }
 const batch = MAX_SIMS <= 100 ? 1 : MAX_SIMS <= 1000 ? 5 : MAX_SIMS <= 10000 ? 50 : 200;
-const end = Math.min(done + batch, MAX_SIMS);
-for (let i = done; i < end; i++) {
-const [gA, gB] = simulateGamePair(simB0, simB1);
-const winnerA = gA.gameLoser === 0 ? 1 : 0;
-const winnerB = gB.gameLoser === 0 ? 1 : 0;
-if (winnerA === 0) gw0++; else gw1++;
-if (winnerB === 0) gw0++; else gw1++;
-if (winnerA === 0 && winnerB === 0) sw0++;
-else if (winnerA === 1 && winnerB === 1) sw1++;
-else splits++;
-for (const game of [gA, gB]) {
-for (const rs of game.roundStats) {
-tr++;
-if (rs.winner === 0) { rw0++; fd[rs.cards] = (fd[rs.cards] || 0) + 1; } else { rw1++; dd[rs.cards] = (dd[rs.cards] || 0) + 1; }
-if (rs.chinchon) { if (rs.winner === 0) cc0++; else cc1++; }
-}
-}
-}
-done = end;
-const totalG = gw0 + gw1;
-if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
-const totalPairs = sw0 + sw1 + splits;
-if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
-setProg(Math.round(done / MAX_SIMS * 100));
-setChartData(buildChartData(fd, dd, n0, n1));
-setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
-setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonWins([cc0, cc1]);
-if (done < MAX_SIMS) setTimeout(tick, 0); else setSimRun(false);
-};
-setTimeout(tick, 0);
-}, [numSims, simB0, simB1]);
-
-const runSimUntilStable = useCallback(() => {
-stopRef.current = false; setSimRun(true); setProg(0); setChartData(null);
-setRoundWins([0, 0]); setGameWins([0, 0]); setSweepWins([0, 0, 0]); setTotalRounds(0);
-setWinRateHistory([]); setSweepRateHistory([]); setChinchonWins([0, 0]); setPromptCopied(false);
-const fd = {}, dd = {}; let rw0 = 0, rw1 = 0, gw0 = 0, gw1 = 0, sw0 = 0, sw1 = 0, splits = 0, tr = 0, cc0 = 0, cc1 = 0, done = 0;
-const wrSnaps: {games: number, rate: number}[] = [];
-const swSnaps: {pairs: number, rate0: number, rate1: number}[] = [];
-const n0 = BOT[simB0].name, n1 = BOT[simB1].name;
-const STABLE_WINDOW = 20;
-const STABLE_THRESHOLD = Math.pow(10, -stabilizeDecimals) * (stabilizeDecimals === 0 ? 3 : 1);
-const MIN_GAMES = 200;
-const MAX_SIMS = numSims;
-const BATCH = 20;
-const isStable = () => {
-  if (!useStabilized) return false;
-  if (wrSnaps.length < STABLE_WINDOW || done < MIN_GAMES) return false;
-  const recent = wrSnaps.slice(-STABLE_WINDOW).map(s => s.rate);
-  const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
-  const stddev = Math.sqrt(recent.reduce((a, b) => a + (b - mean) ** 2, 0) / recent.length);
-  return stddev < STABLE_THRESHOLD;
-};
-const tick = () => {
-if (stopRef.current) { setSimRun(false); return; }
-if (done >= MAX_SIMS) { setSimRun(false); setProg(100); return; }
-for (let i = 0; i < BATCH; i++) {
-if (done >= MAX_SIMS) break;
+let reachedStable = false;
+const simsThisTick = Math.min(batch, MAX_SIMS - done);
+for (let i = 0; i < simsThisTick; i++) {
 const [gA, gB] = simulateGamePair(simB0, simB1);
 const winnerA = gA.gameLoser === 0 ? 1 : 0;
 const winnerB = gB.gameLoser === 0 ? 1 : 0;
@@ -1443,17 +1399,26 @@ if (rs.chinchon) { if (rs.winner === 0) cc0++; else cc1++; }
 }
 }
 done++;
+if (useStabilized) {
+const truncatedRates = getTruncatedWinRates(gw0, gw1, stabilizeDecimals);
+stableStreak = getNextStableStreak(lastStableRates, truncatedRates, stableStreak);
+lastStableRates = truncatedRates;
+if (done >= MIN_SIMULATIONS_BEFORE_STABLE_STOP && stableStreak >= STABLE_SIMULATION_STREAK) {
+reachedStable = true;
+break;
 }
-const totalG = gw0 + gw1;
-if (totalG > 0) wrSnaps.push({ games: totalG, rate: (gw0 / totalG) * 100 });
+}
+}
+const [winRate0, winRate1] = getWinRates(gw0, gw1);
+if (done > 0) wrSnaps.push({ simulations: done, rate0: winRate0, rate1: winRate1 });
 const totalPairs = sw0 + sw1 + splits;
 if (totalPairs > 0) swSnaps.push({ pairs: totalPairs, rate0: (sw0 / totalPairs) * 100, rate1: (sw1 / totalPairs) * 100 });
-const progress = Math.round((done / MAX_SIMS) * 100);
-setProg(Math.min(100, progress));
+setProg(done >= MAX_SIMS || reachedStable ? 100 : Math.round(done / MAX_SIMS * 100));
 setChartData(buildChartData(fd, dd, n0, n1));
 setRoundWins([rw0, rw1]); setGameWins([gw0, gw1]); setSweepWins([sw0, sw1, splits]); setTotalRounds(tr);
 setWinRateHistory([...wrSnaps]); setSweepRateHistory([...swSnaps]); setChinchonWins([cc0, cc1]);
-if (isStable() || done >= MAX_SIMS) { setSimRun(false); setProg(100); } else setTimeout(tick, 0);
+if (reachedStable || done >= MAX_SIMS) { setSimRun(false); return; }
+setTimeout(tick, 0);
 };
 setTimeout(tick, 0);
 }, [simB0, simB1, useStabilized, stabilizeDecimals, numSims]);
@@ -1476,24 +1441,12 @@ const gamesPlayed = Array.from({ length: n }, () => Array(n).fill(0));
 const mirrorWins = Array.from({ length: n }, () => Array(n).fill(0));
 const mirrorPairs = Array.from({ length: n }, () => Array(n).fill(0));
 const chinchones = Array.from({ length: n }, () => Array(n).fill(0));
-const chinchonGames = Array.from({ length: n }, () => Array(n).fill(0));
 
-const STABLE_WINDOW = 20;
-const STABLE_THRESHOLD = Math.pow(10, -tourStabilizeDecimals) * (tourStabilizeDecimals === 0 ? 3 : 1);
-const MIN_SIMS = 200;
 const MAX_SIMS = numSims;
 const BATCH = 20;
 let pairIdx = 0, simsDone = 0, currentWins = 0, currentTotal = 0, currentMirror = [0, 0], currentChinchones = [0, 0];
-const winSnapshots = [];
-
-const isStablePair = () => {
-  if (!tourUseStabilized) return false;
-  if (winSnapshots.length < STABLE_WINDOW || simsDone < MIN_SIMS) return false;
-  const recent = winSnapshots.slice(-STABLE_WINDOW);
-  const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
-  const stddev = Math.sqrt(recent.reduce((a, b) => a + (b - mean) ** 2, 0) / recent.length);
-  return stddev < STABLE_THRESHOLD;
-};
+let lastStableRates = null;
+let stableStreak = 0;
 
 const tick = () => {
   if (stopTourRef.current) { setTourRunning(false); return; }
@@ -1501,10 +1454,12 @@ const tick = () => {
   const globalA = tourBots[ai], globalB = tourBots[bi];
   if (simsDone >= MAX_SIMS) {
     pairIdx++;
-    simsDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0]; winSnapshots.length = 0;
+    simsDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0];
+    lastStableRates = null; stableStreak = 0;
     if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); setTourCurrentStats(null); return; }
   }
   const simsThisTick = Math.min(BATCH, MAX_SIMS - simsDone);
+  let stable = false;
   for (let i = 0; i < simsThisTick; i++) {
     const [gA, gB] = simulateGamePair(globalA, globalB);
     const wA = (gA.gameLoser === 1 ? 1 : 0) + (gB.gameLoser === 1 ? 1 : 0);
@@ -1523,17 +1478,22 @@ const tick = () => {
     const chinForB = chinA1 + chinB1;
     chinchones[ai][bi] += chinForA;
     chinchones[bi][ai] += chinForB;
-    chinchonGames[ai][bi] += 2;
-    chinchonGames[bi][ai] += 2;
     currentChinchones[0] += chinForA;
     currentChinchones[1] += chinForB;
     currentWins += wA;
     currentTotal += 2;
+    simsDone++;
+    if (tourUseStabilized) {
+      const truncatedRates = getTruncatedWinRates(currentWins, currentTotal - currentWins, tourStabilizeDecimals);
+      stableStreak = getNextStableStreak(lastStableRates, truncatedRates, stableStreak);
+      lastStableRates = truncatedRates;
+      if (simsDone >= MIN_SIMULATIONS_BEFORE_STABLE_STOP && stableStreak >= STABLE_SIMULATION_STREAK) {
+        stable = true;
+        break;
+      }
+    }
   }
-  simsDone += simsThisTick;
-  winSnapshots.push(currentTotal > 0 ? (currentWins / currentTotal) * 100 : 50);
-  const stable = isStablePair();
-  const fraction = stable || simsDone >= MAX_SIMS ? 1 : Math.min(simsDone / MIN_SIMS, 0.99);
+  const fraction = stable || simsDone >= MAX_SIMS ? 1 : simsDone / MAX_SIMS;
   setTourProgress(Math.min(99, Math.round(((pairIdx + fraction) / pairs.length) * 100)));
   setTourCurrentPair(pairIdx);
   setTourCurrentStats({
@@ -1548,11 +1508,11 @@ const tick = () => {
     mirrorWins: mirrorWins.map(r => [...r]),
     mirrorPairs: mirrorPairs.map(r => [...r]),
     chinchones: chinchones.map(r => [...r]),
-    chinchonGames: chinchonGames.map(r => [...r]),
   });
   if (stable || simsDone >= MAX_SIMS) {
     pairIdx++;
-    simsDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0]; winSnapshots.length = 0;
+    simsDone = 0; currentWins = 0; currentTotal = 0; currentMirror = [0, 0]; currentChinchones = [0, 0];
+    lastStableRates = null; stableStreak = 0;
     if (pairIdx >= pairs.length) { setTourRunning(false); setTourProgress(100); setTourCurrentPair(null); setTourCurrentStats(null); return; }
     setTourCurrentPair(pairIdx);
   }
@@ -1725,14 +1685,20 @@ return (
                   {[0, 1, 2, 3].map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
+              <p className="text-[11px] leading-snug text-gray-500 max-w-xs">
+                Corta cuando los winrates truncados no cambian durante {STABLE_SIMULATION_STREAK} simulaciones seguidas.
+              </p>
             </div>
           )}
         </div>
 
         {!simRun ? (
           <div className="flex gap-2 mt-1 flex-wrap justify-center">
-            <button onClick={runSim} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95">Simular {numSims >= 1000 ? `${numSims / 1000}k` : numSims} simulaciones</button>
-            <button onClick={runSimUntilStable} className="bg-violet-700 hover:bg-violet-600 text-white px-4 py-1.5 rounded-md text-sm font-semibold active:scale-95" title="Corre hasta que el winrate se estabilice">⚖️ Auto-estabilizar</button>
+            <button onClick={runSim} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold active:scale-95">
+              {useStabilized
+                ? `Simular hasta ${numSims >= 1000 ? `${numSims / 1000}k` : numSims} o estabilizar`
+                : `Simular ${numSims >= 1000 ? `${numSims / 1000}k` : numSims} simulaciones`}
+            </button>
           </div>
         ) : <button onClick={() => { stopRef.current = true; }} className="bg-red-600 hover:bg-red-500 text-white px-5 py-1.5 rounded-md text-sm font-semibold mt-1">Parar ({prog}%)</button>}
       </div>
@@ -1784,7 +1750,7 @@ return (
 
       {/* Combined charts panel — always visible */}
       {(() => {
-        const winData = winRateHistory.map(d => ({ x: d.games, y0: d.rate, y1: 100 - d.rate }));
+        const winData = winRateHistory.map(d => ({ x: d.simulations, y0: d.rate0, y1: d.rate1 }));
         const sweepData = sweepRateHistory.map(d => ({ x: d.pairs, y0: d.rate0, y1: d.rate1 }));
         const activeData = chartTab === "winrate" ? winData : sweepData;
         const sliced = chartZoom ? activeData.slice(-chartZoom) : activeData;
@@ -1815,7 +1781,7 @@ return (
             </div>
             <p className="text-xs text-gray-600 text-center mb-2">
               {chartTab === "winrate"
-                ? "Partidas ganadas acumuladas por simulación · si la línea se estabiliza, la muestra es suficiente"
+                ? "Winrate acumulado por simulación espejo · si los porcentajes truncados se clavan, la muestra alcanza"
                 : "% de simulaciones donde cada bot gana ambas partidas espejo (sin empates)"}
             </p>
             <RateChart data={sliced} bot0={BOT[simB0]} bot1={BOT[simB1]} />
@@ -1839,12 +1805,12 @@ return (
           <div className="flex items-center justify-between">
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB0].color }}>{chinchonWins[0]}</div>
-              <div className="text-xs text-gray-500">{(chinchonWins[0] / (gameWins[0] + gameWins[1]) * 100).toFixed(4)}% de partidas</div>
+              <div className="text-xs text-gray-500">{getChinchonWinRate(chinchonWins[0], gameWins[0]).toFixed(4)}% de sus victorias</div>
             </div>
-            <div className="text-center px-3 text-xs text-gray-600">🏆 por bot</div>
+            <div className="text-center px-3 text-xs text-gray-600">🏆 sobre victorias</div>
             <div className="text-center flex-1">
               <div className="text-lg font-bold" style={{ color: BOT[simB1].color }}>{chinchonWins[1]}</div>
-              <div className="text-xs text-gray-500">{(chinchonWins[1] / (gameWins[0] + gameWins[1]) * 100).toFixed(4)}% de partidas</div>
+              <div className="text-xs text-gray-500">{getChinchonWinRate(chinchonWins[1], gameWins[1]).toFixed(4)}% de sus victorias</div>
             </div>
           </div>
         </div>
@@ -2039,14 +2005,13 @@ return (
       return { wins: totalW, pairs: totalP };
     };
     const getBotChinchones = (ai) => {
-      if (!tourResults) return { chinchones: 0, games: 0 };
-      let totalC = 0, totalG = 0;
+      if (!tourResults) return { chinchones: 0 };
+      let totalC = 0;
       for (let j = 0; j < TOUR_N; j++) {
         if (j === ai) continue;
         totalC += tourResults.chinchones[ai][j];
-        totalG += tourResults.chinchonGames[ai][j];
       }
-      return { chinchones: totalC, games: totalG };
+      return { chinchones: totalC };
     };
 
     const rankingWins = [0, 1, 2, 3].map(ai => {
@@ -2058,8 +2023,9 @@ return (
       return { idx: ai, wins: w, pairs: p, winPct: p > 0 ? (w / p) * 100 : 0 };
     }).sort((a, b) => b.winPct - a.winPct);
     const rankingChinchon = [0, 1, 2, 3].map(ai => {
-      const { chinchones: c, games: g } = getBotChinchones(ai);
-      return { idx: ai, chinchones: c, games: g, rate: g > 0 ? (c / g) * 100 : 0 };
+      const { wins: w } = getBotWins(ai);
+      const { chinchones: c } = getBotChinchones(ai);
+      return { idx: ai, chinchones: c, wins: w, rate: getChinchonWinRate(c, w) };
     }).sort((a, b) => b.chinchones - a.chinchones || b.rate - a.rate);
 
     const isDone = !tourRunning && tourProgress === 100 && tourResults !== null;
@@ -2123,6 +2089,9 @@ return (
                   {[0, 1, 2, 3].map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
+              <p className="text-[11px] leading-snug text-gray-500 max-w-xs">
+                Corta cuando los winrates truncados no cambian durante {STABLE_SIMULATION_STREAK} simulaciones seguidas.
+              </p>
             </div>
           )}
           <div className="mt-3 pt-3 border-t border-gray-700">
@@ -2211,9 +2180,30 @@ return (
 
         {tourResults && (
           <>
+            <div className="w-full flex justify-center mb-3">
+              <div className="flex gap-0.5 bg-gray-900 rounded-lg p-0.5 border border-gray-800">
+                <button
+                  onClick={() => setTourMatrixView("percent")}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${tourMatrixView === "percent" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
+                >
+                  Ver %
+                </button>
+                <button
+                  onClick={() => setTourMatrixView("absolute")}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${tourMatrixView === "absolute" ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
+                >
+                  Ver absolutos
+                </button>
+              </div>
+            </div>
+
             {/* Results matrix */}
             <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 overflow-x-auto">
-              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">Matriz de resultados (% victorias fila vs columna)</h3>
+              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">
+                {tourMatrixView === "percent"
+                  ? "Matriz de resultados (% victorias fila vs columna)"
+                  : "Matriz de resultados (victorias absolutas fila vs columna)"}
+              </h3>
               <table className="w-full text-xs min-w-[320px]">
                 <thead>
                   <tr>
@@ -2241,11 +2231,15 @@ return (
                           if (g === 0) return <td key={j} className="text-center text-gray-600 py-2">...</td>;
                           const pct = (w / g) * 100;
                           const col = pct >= 55 ? "#22c55e" : pct >= 47 ? "#9ca3af" : "#f87171";
-                          return <td key={j} className="text-center py-2 font-mono" style={{ color: col }}>{pct.toFixed(1)}%</td>;
+                          return (
+                            <td key={j} className="text-center py-2 font-mono" style={{ color: col }}>
+                              {tourMatrixView === "percent" ? `${pct.toFixed(1)}%` : w}
+                            </td>
+                          );
                         })}
                         <td className="text-center py-2 font-bold font-mono">
                           {winPct !== null
-                            ? <span style={{ color: b.color }}>{winPct.toFixed(2)}%</span>
+                            ? <span style={{ color: b.color }}>{tourMatrixView === "percent" ? `${winPct.toFixed(2)}%` : totalW}</span>
                             : <span className="text-gray-600">...</span>}
                         </td>
                       </tr>
@@ -2255,7 +2249,11 @@ return (
               </table>
             </div>
             <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4 overflow-x-auto">
-              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">Matriz espejo (% de pares donde la fila gana ambas)</h3>
+              <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">
+                {tourMatrixView === "percent"
+                  ? "Matriz espejo (% de pares donde la fila gana ambas)"
+                  : "Matriz espejo (dobles espejo ganados por la fila)"}
+              </h3>
               <table className="w-full text-xs min-w-[320px]">
                 <thead>
                   <tr>
@@ -2281,10 +2279,16 @@ return (
                           const w = tourResults.mirrorWins[ai][j];
                           if (p === 0) return <td key={j} className="text-center text-gray-600 py-2">...</td>;
                           const pct = (w / p) * 100;
-                          return <td key={j} className="text-center py-2 font-mono text-violet-300">{pct.toFixed(1)}%</td>;
+                          return (
+                            <td key={j} className="text-center py-2 font-mono text-violet-300">
+                              {tourMatrixView === "percent" ? `${pct.toFixed(1)}%` : w}
+                            </td>
+                          );
                         })}
                         <td className="text-center py-2 font-bold font-mono">
-                          {winPct !== null ? <span style={{ color: b.color }}>{winPct.toFixed(2)}%</span> : <span className="text-gray-600">...</span>}
+                          {winPct !== null
+                            ? <span style={{ color: b.color }}>{tourMatrixView === "percent" ? `${winPct.toFixed(2)}%` : totalW}</span>
+                            : <span className="text-gray-600">...</span>}
                         </td>
                       </tr>
                     );
@@ -2348,11 +2352,11 @@ return (
                   );
                 })}
               </div>
-              <h4 className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">3) Chinchones</h4>
+              <h4 className="text-[11px] text-gray-500 uppercase tracking-wider mb-2">3) Chinchones (% de victorias)</h4>
               <div className="flex flex-col gap-2.5">
                 {rankingChinchon.map((r, pos) => {
                   const bot = BOT[tourBots[r.idx]];
-                  const barW = r.games > 0 ? Math.max(2, Math.min(100, r.rate * 2)) : 2;
+                  const barW = r.wins > 0 ? Math.max(2, Math.min(100, r.rate)) : 2;
                   return (
                     <div key={r.idx} className="flex items-center gap-2">
                       <span className="text-base w-7 text-center shrink-0">{medals[pos]}</span>
@@ -2361,7 +2365,7 @@ return (
                         <div className="h-full rounded transition-all duration-300" style={{ width: `${barW}%`, background: bot.color + "99" }} />
                       </div>
                       <span className="text-xs font-mono w-28 text-right shrink-0" style={{ color: bot.color }}>
-                        {r.games > 0 ? `${r.chinchones} (${r.rate.toFixed(2)}%)` : "..."}
+                        {r.wins > 0 ? `${r.chinchones} (${r.rate.toFixed(2)}%)` : "..."}
                       </span>
                     </div>
                   );
