@@ -1468,8 +1468,12 @@ setTourCurrentStats(null);
 setTourResults(null);
 
 const n = 4;
-const pairs = [];
-for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) pairs.push([i, j]);
+const fechas = [
+  [[0, 3], [1, 2]],
+  [[0, 2], [3, 1]],
+  [[0, 1], [2, 3]],
+];
+const pairs = fechas.flatMap((matches) => matches);
 
 const wins = Array.from({ length: n }, () => Array(n).fill(0));
 const gamesPlayed = Array.from({ length: n }, () => Array(n).fill(0));
@@ -2013,8 +2017,14 @@ return (
   {/* --- TORNEO --- */}
   {tab === "torneo" && (() => {
     const TOUR_N = 4;
-    const tourPairs = [];
-    for (let i = 0; i < TOUR_N; i++) for (let j = i + 1; j < TOUR_N; j++) tourPairs.push([i, j]);
+    const tourFechas = [
+      [[0, 3], [1, 2]],
+      [[0, 2], [3, 1]],
+      [[0, 1], [2, 3]],
+    ];
+    const tourPairs = tourFechas.flatMap((matches, fechaIdx) =>
+      matches.map((pair, matchIdx) => ({ pair, fecha: fechaIdx, match: matchIdx }))
+    );
 
     const getBotWins = (ai) => {
       if (!tourResults) return { wins: 0, games: 0 };
@@ -2060,6 +2070,8 @@ return (
       const { chinchones: c, games: g } = getBotChinchones(ai);
       return { idx: ai, chinchones: c, games: g, rate: g > 0 ? (c / g) * 100 : 0 };
     }).sort((a, b) => b.chinchones - a.chinchones || b.rate - a.rate);
+    const totalTournamentGames = rankingWins.reduce((acc, row) => acc + row.games, 0);
+    const totalTournamentMirrorPairs = rankingMirror.reduce((acc, row) => acc + row.pairs, 0);
 
     const isDone = !tourRunning && tourProgress === 100 && tourResults !== null;
     const medals = ["🥇", "🥈", "🥉", "🗑️"];
@@ -2159,16 +2171,42 @@ return (
           </div>
         )}
 
+        {/* Fixture by fechas */}
+        <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4">
+          <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">Fixture por fechas</h3>
+          <div className="grid sm:grid-cols-3 gap-3">
+            {tourFechas.map((matches, fechaIdx) => (
+              <div key={fechaIdx} className="bg-gray-800/60 rounded-lg p-2.5 border border-gray-700">
+                <div className="text-[11px] text-gray-400 uppercase tracking-wider mb-2 text-center">Fecha {fechaIdx + 1}</div>
+                <div className="space-y-1.5">
+                  {matches.map(([a, b], matchIdx) => {
+                    const current = tourCurrentPair !== null && tourPairs[tourCurrentPair]?.fecha === fechaIdx && tourPairs[tourCurrentPair]?.match === matchIdx;
+                    return (
+                      <div key={matchIdx}
+                        className={`text-xs rounded px-2 py-1 border ${current ? "border-amber-500 bg-amber-500/10" : "border-gray-700"}`}>
+                        <span style={{ color: BOT[tourBots[a]].color }}>{BOT[tourBots[a]].emoji} {BOT[tourBots[a]].name}</span>
+                        <span className="text-gray-500"> vs </span>
+                        <span style={{ color: BOT[tourBots[b]].color }}>{BOT[tourBots[b]].emoji} {BOT[tourBots[b]].name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* Current matchup status */}
         {tourRunning && tourCurrentPair !== null && (
           <div className="text-xs text-gray-500 mb-3 text-center">
-            Corriendo enfrentamiento {tourCurrentPair + 1} de {tourPairs.length}:{" "}
-            <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][0]]].color }}>
-              {BOT[tourBots[tourPairs[tourCurrentPair][0]]].emoji} {BOT[tourBots[tourPairs[tourCurrentPair][0]]].name}
+            Corriendo fecha {tourPairs[tourCurrentPair].fecha + 1} · partido {tourPairs[tourCurrentPair].match + 1} de 2
+            {" "}({tourCurrentPair + 1}/{tourPairs.length}):{" "}
+            <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair].pair[0]]].color }}>
+              {BOT[tourBots[tourPairs[tourCurrentPair].pair[0]]].emoji} {BOT[tourBots[tourPairs[tourCurrentPair].pair[0]]].name}
             </span>
             {" vs "}
-            <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>
-              {BOT[tourBots[tourPairs[tourCurrentPair][1]]].emoji} {BOT[tourBots[tourPairs[tourCurrentPair][1]]].name}
+            <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair].pair[1]]].color }}>
+              {BOT[tourBots[tourPairs[tourCurrentPair].pair[1]]].emoji} {BOT[tourBots[tourPairs[tourCurrentPair].pair[1]]].name}
             </span>
           </div>
         )}
@@ -2181,29 +2219,61 @@ return (
                 <div className="text-gray-200 font-mono">{tourCurrentStats.games}</div>
               </div>
               <div className="bg-gray-800/70 rounded p-2">
-                <div className="text-gray-500">Victorias</div>
-                <div className="font-mono">
-                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][0]]].color }}>{tourCurrentStats.wins[0]}</span>
+                  <div className="text-gray-500">Victorias</div>
+                  <div className="font-mono">
+                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair].pair[0]]].color }}>{tourCurrentStats.wins[0]}</span>
                   <span className="text-gray-500"> - </span>
-                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>{tourCurrentStats.wins[1]}</span>
+                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair].pair[1]]].color }}>{tourCurrentStats.wins[1]}</span>
                 </div>
               </div>
               <div className="bg-gray-800/70 rounded p-2">
                 <div className="text-gray-500">Victorias espejo</div>
                 <div className="font-mono">
-                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][0]]].color }}>{tourCurrentStats.mirrorWins[0]}</span>
+                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair].pair[0]]].color }}>{tourCurrentStats.mirrorWins[0]}</span>
                   <span className="text-gray-500"> - </span>
-                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>{tourCurrentStats.mirrorWins[1]}</span>
+                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair].pair[1]]].color }}>{tourCurrentStats.mirrorWins[1]}</span>
                 </div>
               </div>
               <div className="bg-gray-800/70 rounded p-2">
                 <div className="text-gray-500">Chinchones</div>
                 <div className="font-mono">
-                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][0]]].color }}>{tourCurrentStats.chinchones[0]}</span>
+                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair].pair[0]]].color }}>{tourCurrentStats.chinchones[0]}</span>
                   <span className="text-gray-500"> - </span>
-                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair][1]]].color }}>{tourCurrentStats.chinchones[1]}</span>
+                  <span style={{ color: BOT[tourBots[tourPairs[tourCurrentPair].pair[1]]].color }}>{tourCurrentStats.chinchones[1]}</span>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {tourResults && (
+          <div className="w-full bg-gray-900 border border-gray-800 rounded-xl p-4 mb-4">
+            <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-3 text-center">Resultados del torneo (por partida)</h3>
+            <div className="space-y-2">
+              {[0, 1, 2, 3].map(ai => {
+                const bot = BOT[tourBots[ai]];
+                const winsData = getBotWins(ai);
+                const mirrorData = getBotMirrorWins(ai);
+                const totalWinsPct = totalTournamentGames > 0 ? (winsData.wins / totalTournamentGames) * 100 : 0;
+                const totalMirrorPct = totalTournamentMirrorPairs > 0 ? (mirrorData.wins / totalTournamentMirrorPairs) * 100 : 0;
+                return (
+                  <div key={ai} className="bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-2">
+                    <div className="text-xs font-semibold mb-1" style={{ color: bot.color }}>{bot.emoji} {bot.name}</div>
+                    <div className="grid sm:grid-cols-2 gap-1 text-xs">
+                      <div>
+                        <span className="text-gray-500">Victorias totales:</span>{" "}
+                        <span className="font-mono text-gray-200">{winsData.wins}</span>{" "}
+                        <span className="text-gray-500">({totalWinsPct.toFixed(2)}% del torneo)</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Victorias espejo:</span>{" "}
+                        <span className="font-mono text-violet-300">{mirrorData.wins}</span>{" "}
+                        <span className="text-gray-500">({totalMirrorPct.toFixed(2)}% del torneo)</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
