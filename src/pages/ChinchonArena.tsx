@@ -135,6 +135,7 @@ const CUSTOM_COLORS = [
 { color: "#a3e635", text: "text-lime-400", bg: "bg-lime-950", border: "border-lime-800" },
 { color: "#c084fc", text: "text-purple-400", bg: "bg-purple-950", border: "border-purple-800" },
 ];
+const MAX_CUSTOM_BOTS = 8;
 const DEFAULT_SCORE_RULES = () => [{ minScore: 0, maxResto: 5 }, { minScore: 25, maxResto: 3 }, { minScore: 50, maxResto: 2 }, { minScore: 75, maxResto: 1 }];
 const DEFAULT_CUSTOM_CONFIG = () => ({
 id: "custom-" + Date.now(),
@@ -233,8 +234,9 @@ localStorage.getItem("chinchon-lab-custom-bots")
 ?? localStorage.getItem("chinchon-arena-custom-bots")
 ?? "[]"
 );
+if (!Array.isArray(configs)) return [];
 // Clamp resto values to the legal game maximum of 5
-return configs.map(cfg => ({
+return configs.slice(0, MAX_CUSTOM_BOTS).map(cfg => ({
 ...cfg,
 cut: {
 ...cfg.cut,
@@ -245,7 +247,9 @@ scoreRules: (cfg.cut?.scoreRules ?? []).map(r => ({ ...r, maxResto: Math.min(r.m
 } catch { return []; }
 }
 function saveCustomConfigs(configs) {
-localStorage.setItem("chinchon-lab-custom-bots", JSON.stringify(configs));
+const safeConfigs = configs.slice(0, MAX_CUSTOM_BOTS);
+localStorage.setItem("chinchon-lab-custom-bots", JSON.stringify(safeConfigs));
+localStorage.setItem("chinchon-arena-custom-bots", JSON.stringify(safeConfigs));
 }
 
 const BUILTIN_BOT_CONFIGS = [
@@ -2829,6 +2833,7 @@ return (
           setCustomConfigs(prev => {
             const idx = prev.findIndex(c => c.id === cfg.id);
             if (idx >= 0) { const next = [...prev]; next[idx] = cfg; return next; }
+            if (prev.length >= MAX_CUSTOM_BOTS) return prev;
             return [...prev, cfg];
           });
           setEditingBot(null);
@@ -2844,27 +2849,8 @@ return (
             </button>
           </div>
 
-          {/* Built-in bots */}
-          <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Preconstruidos</p>
-          <div className="flex flex-wrap gap-2 justify-center mb-5">
-            {BUILTIN_BOT_CONFIGS.map(cfg => (
-              <div key={cfg.id} className={`${cfg.bg} border ${cfg.border} rounded-lg px-4 py-3 w-44`}>
-                <div className="font-bold text-sm mb-0.5" style={{ color: cfg.color }}>{cfg.emoji} {cfg.name}</div>
-                <div className="text-gray-500 text-xs mb-2 leading-tight min-h-[2rem]">
-                  {showDescMode === "desc"
-                    ? (cfg.description || <span className="italic text-gray-600">{generateDesc(cfg)}</span>)
-                    : generateDesc(cfg)}
-                </div>
-                <button onClick={() => setViewingBot(cfg)}
-                  className="text-xs text-gray-400 hover:text-gray-200 bg-gray-900/60 px-2 py-0.5 rounded transition-colors">
-                  Ver config
-                </button>
-              </div>
-            ))}
-          </div>
-
           {/* Custom bots */}
-          <div className="border-t border-gray-800 pt-4 mb-4">
+          <div className="mb-5">
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs text-gray-600 uppercase tracking-wider">Mis bots</p>
               <div className="flex gap-1.5">
@@ -2872,13 +2858,16 @@ return (
                   className="text-xs text-gray-400 hover:text-gray-200 bg-gray-800 px-2.5 py-1 rounded border border-gray-700 hover:border-gray-600 transition-colors">
                   {showImport ? "Cancelar" : "Importar"}
                 </button>
-                {customConfigs.length < 4 && (
+                {customConfigs.length < MAX_CUSTOM_BOTS && (
                   <button onClick={() => setEditingBot(DEFAULT_CUSTOM_CONFIG())}
                     className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-semibold active:scale-95 transition-all">
                     + Nuevo
                   </button>
                 )}
               </div>
+            </div>
+            <div className="text-xs text-gray-500 mb-3 text-center">
+              Tus bots custom se guardan automáticamente en este navegador. Máximo {MAX_CUSTOM_BOTS}.
             </div>
             {showImport && (
               <div className="mb-3 bg-gray-900 border border-gray-700 rounded-lg p-3">
@@ -2892,7 +2881,7 @@ return (
                   try { raw = JSON.parse(importText); } catch { setImportError("JSON inválido"); return; }
                   const cfg = sanitizeImportConfig(raw);
                   if (!cfg) { setImportError("Configuración inválida o incompleta"); return; }
-                  if (customConfigs.length >= 4) { setImportError("Ya tenés 4 bots custom (máximo)"); return; }
+                  if (customConfigs.length >= MAX_CUSTOM_BOTS) { setImportError(`Ya tenés ${MAX_CUSTOM_BOTS} bots custom (máximo)`); return; }
                   setCustomConfigs(prev => [...prev, cfg]);
                   setShowImport(false); setImportText("");
                 }} className="mt-2 bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">
@@ -2952,9 +2941,30 @@ return (
                 })}
               </div>
             )}
-            {customConfigs.length >= 4 && (
-              <div className="text-xs text-gray-600 text-center mt-3">Máximo 4 bots custom</div>
+            {customConfigs.length >= MAX_CUSTOM_BOTS && (
+              <div className="text-xs text-gray-600 text-center mt-3">Máximo {MAX_CUSTOM_BOTS} bots custom</div>
             )}
+          </div>
+
+          {/* Built-in bots */}
+          <div className="border-t border-gray-800 pt-4 mb-4">
+            <p className="text-xs text-gray-600 uppercase tracking-wider mb-2">Preconstruidos</p>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {BUILTIN_BOT_CONFIGS.map(cfg => (
+                <div key={cfg.id} className={`${cfg.bg} border ${cfg.border} rounded-lg px-4 py-3 w-44`}>
+                  <div className="font-bold text-sm mb-0.5" style={{ color: cfg.color }}>{cfg.emoji} {cfg.name}</div>
+                  <div className="text-gray-500 text-xs mb-2 leading-tight min-h-[2rem]">
+                    {showDescMode === "desc"
+                      ? (cfg.description || <span className="italic text-gray-600">{generateDesc(cfg)}</span>)
+                      : generateDesc(cfg)}
+                  </div>
+                  <button onClick={() => setViewingBot(cfg)}
+                    className="text-xs text-gray-400 hover:text-gray-200 bg-gray-900/60 px-2 py-0.5 rounded transition-colors">
+                    Ver config
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
