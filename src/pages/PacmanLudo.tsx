@@ -95,6 +95,17 @@ function allInBase(playerTokens: Token[]): boolean {
 return playerTokens.every(t => t.state === "base");
 }
 
+// Check if a token on the path has an enemy 1 step behind it
+function isSweating(tok: Token, pid: number, allTokens: TokenMap, numPlayers: number): boolean {
+if (tok.state !== "path") return false;
+const behindIdx = ((tok.pathIdx - 1) + 52) % 52;
+for (let p = 0; p < numPlayers; p++) {
+  if (p === pid) continue;
+  if ((allTokens[p] || []).some(ot => ot.state === "path" && ot.pathIdx === behindIdx)) return true;
+}
+return false;
+}
+
 function getRouletteConfig(mode: GameMode, isAllBase: boolean): RouletteSection[] {
 if (isAllBase) {
   const ghostW = GHOST_CHANCE[mode] || 20;
@@ -204,7 +215,7 @@ return () => window.removeEventListener("resize", f);
 return s;
 }
 
-function Ghost({ color, size, glow }: { color: string, size: number, glow?: string }) {
+function Ghost({ color, size, glow, sweating }: { color: string, size: number, glow?: string, sweating?: boolean }) {
 return (
 <svg width={size} height={size} viewBox="0 0 16 16" style={{ filter: glow ? `drop-shadow(0 0 4px ${glow})` : undefined, display: "block" }}>
 <path d="M3 14 L3 6 Q3 2 8 2 Q13 2 13 6 L13 14 L11 12 L9.5 14 L8 12 L6.5 14 L5 12 Z" fill={color} />
@@ -212,6 +223,16 @@ return (
 <rect x="8.5" y="5" width="2.5" height="3" rx="1" fill="white" />
 <rect x="6" y="6" width="1.5" height="1.5" rx=".5" fill="#222" />
 <rect x="9.5" y="6" width="1.5" height="1.5" rx=".5" fill="#222" />
+{sweating && <>
+  <circle cx="14" cy="4" r="0.8" fill="#44BBFF" opacity="0.9">
+    <animate attributeName="cy" values="4;8;4" dur="0.8s" repeatCount="indefinite" />
+    <animate attributeName="opacity" values="0.9;0.3;0.9" dur="0.8s" repeatCount="indefinite" />
+  </circle>
+  <circle cx="14.8" cy="6" r="0.6" fill="#44BBFF" opacity="0.7">
+    <animate attributeName="cy" values="6;10;6" dur="1s" repeatCount="indefinite" />
+    <animate attributeName="opacity" values="0.7;0.2;0.7" dur="1s" repeatCount="indefinite" />
+  </circle>
+</>}
 </svg>
 );
 }
@@ -349,6 +370,9 @@ const rouletteSpeedRef = useRef(0);
 const rouletteRAF = useRef<number | null>(null);
 const rouletteStartRef = useRef(0);
 const timeoutRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+const [autoPlay, setAutoPlay] = useState(false);
+// Track movable tokens for keyboard pick
+const movableTokensRef = useRef<Token[]>([]);
 
 const CELL = useMemo(() => {
 if (screen === "game") {
@@ -366,6 +390,52 @@ useEffect(() => () => {
   if (timeoutRef.current) clearTimeout(timeoutRef.current);
   if (rouletteRAF.current) cancelAnimationFrame(rouletteRAF.current);
 }, []);
+
+// Keyboard handler (desktop only: space + number keys)
+useEffect(() => {
+if (screen !== "game") return;
+const handler = (e: KeyboardEvent) => {
+  if (e.key === " " || e.code === "Space") {
+    e.preventDefault();
+    if (rouletteOpen && rouletteSpinning) {
+      handleRouletteStop();
+    } else if (phase === "roll" && !rolling && !rouletteOpen) {
+      if (gameMode === "normal") handleRoll();
+      else handleRouletteOpen();
+    }
+  }
+  // Number keys 1-4 for picking tokens
+  const num = parseInt(e.key);
+  if (phase === "pick" && num >= 1 && num <= movableTokensRef.current.length) {
+    const tok = movableTokensRef.current[num - 1];
+    if (tok && canTokenMove(tok, cur, dice)) {
+      applyMove(tok.id, cur, dice, tokens);
+    }
+  }
+};
+window.addEventListener("keydown", handler);
+return () => window.removeEventListener("keydown", handler);
+});
+
+// Auto-play: auto-roll dice or auto-open roulette when phase becomes "roll"
+useEffect(() => {
+if (!autoPlay || screen !== "game" || phase !== "roll" || rolling || rouletteOpen) return;
+const t = setTimeout(() => {
+  if (gameMode === "normal") handleRoll();
+  else handleRouletteOpen();
+}, 600);
+return () => clearTimeout(t);
+});
+
+// Auto-play: auto-stop roulette after a random delay
+useEffect(() => {
+if (!autoPlay || !rouletteOpen || !rouletteSpinning) return;
+const delay = 1500 + Math.random() * 2500; // 1.5-4s random stop
+const t = setTimeout(() => {
+  handleRouletteStop();
+}, delay);
+return () => clearTimeout(t);
+});
 
 // Menu animation
 useEffect(() => {
@@ -469,7 +539,9 @@ if (movable.length === 0) {
   setMsg(`Sacó ${finalValue}, moviendo...`);
   timeoutRef.current = setTimeout(() => applyMove(movable[0].id, cur, finalValue, tokens), 300);
 } else {
-  setMsg(`Sacó ${finalValue}. Tocá una ficha para mover`);
+  movableTokensRef.current = movable;
+  const hint = !sm ? ` (${movable.map((_,i) => i+1).join(",")})` : "";
+  setMsg(`Sacó ${finalValue}. Tocá una ficha para mover${hint}`);
   setPhase("pick");
 }
 }
@@ -643,6 +715,9 @@ for (const key in posMap) {
   group.forEach(({ tok, pid }, gi) => {
     const [r, c] = getTokenPos(tok, pid);
     const isClickable = pid === cur && phase === "pick" && canTokenMove(tok, pid, dice);
+    const sweating = isSweating(tok, pid, tokens, playerCount);
+    // Pick number for keyboard (desktop only)
+    const pickIdx = isClickable ? movableTokensRef.current.findIndex(mt => mt.id === tok.id) : -1;
     // Stack offset: shift tokens slightly so they're all visible
     const offsetX = count > 1 ? (gi - (count - 1) / 2) * Math.max(4, CELL * 0.18) : 0;
     const offsetY = count > 1 ? (gi - (count - 1) / 2) * Math.max(-3, -CELL * 0.12) : 0;
@@ -655,10 +730,22 @@ for (const key in posMap) {
       cursor: isClickable ? "pointer" : "default",
       zIndex: isClickable ? 30 : 10 + gi,
       transition: "all .4s cubic-bezier(.34,1.56,.64,1)",
-      transform: isClickable ? "scale(1.3)" : "scale(1)",
-      animation: isClickable ? "gp .8s infinite alternate" : "none",
+      transform: isClickable ? "scale(1.3)" : (sweating ? "scale(1) translateX(1px)" : "scale(1)"),
+      animation: isClickable ? "gp .8s infinite alternate" : (sweating ? "sweat .3s infinite alternate" : "none"),
       filter: isClickable ? `drop-shadow(0 0 6px ${PLAYERS[pid].color})` : undefined,
-    }}><Ghost color={PLAYERS[pid].color} size={gs} glow={isClickable ? PLAYERS[pid].glow : undefined} /></div>);
+    }}>
+      <Ghost color={PLAYERS[pid].color} size={gs} glow={isClickable ? PLAYERS[pid].glow : undefined} sweating={sweating} />
+      {isClickable && pickIdx >= 0 && !sm && (
+        <div style={{
+          position: "absolute", top: -Math.max(6, gs * 0.25), left: "50%", transform: "translateX(-50%)",
+          background: PLAYERS[pid].color, color: "#000", fontWeight: 900,
+          fontSize: Math.max(8, gs * 0.35), fontFamily: "'Courier New',monospace",
+          width: Math.max(12, gs * 0.4), height: Math.max(12, gs * 0.4),
+          borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: `0 0 6px ${PLAYERS[pid].color}`,
+        }}>{pickIdx + 1}</div>
+      )}
+    </div>);
   });
 }
 
@@ -694,7 +781,7 @@ return (
 
 }
 
-const CSS = `@keyframes gp{from{filter:brightness(1)}to{filter:brightness(1.5)}} @keyframes fl{from{transform:translateY(0)}to{transform:translateY(-6px)}} *{box-sizing:border-box;margin:0;padding:0} html,body,#root{height:100%;overflow:hidden} ::-webkit-scrollbar{display:none}`;
+const CSS = `@keyframes gp{from{filter:brightness(1)}to{filter:brightness(1.5)}} @keyframes fl{from{transform:translateY(0)}to{transform:translateY(-6px)}} @keyframes sweat{0%{transform:scale(1) translateX(-1px)}100%{transform:scale(1) translateX(1px)}} *{box-sizing:border-box;margin:0;padding:0} html,body,#root{height:100%;overflow:hidden} ::-webkit-scrollbar{display:none}`;
 
 // ═══ MENU ═══
 if (screen === "menu") {
@@ -842,6 +929,12 @@ return (
         </div>
       );
     })}
+    <button onClick={() => setAutoPlay(a => !a)} style={{
+      padding: sm ? "2px 5px" : "2px 7px", fontSize: sm ? 7 : 8, fontFamily: "'Courier New',monospace",
+      background: autoPlay ? "#FFE00022" : "transparent", color: autoPlay ? "#FFE000" : "#444",
+      border: `1px solid ${autoPlay ? "#FFE000" : "#333"}`, borderRadius: 5, cursor: "pointer", letterSpacing: 1,
+      transition: "all .2s",
+    }}>{autoPlay ? "AUTO" : "MANUAL"}</button>
     <button onClick={() => setScreen("menu")} style={{ padding: sm ? "2px 6px" : "2px 8px", fontSize: sm ? 7 : 8, fontFamily: "'Courier New',monospace", background: "transparent", color: "#444", border: "1px solid #333", borderRadius: 5, cursor: "pointer", letterSpacing: 1 }}>✕</button>
   </div>
 
