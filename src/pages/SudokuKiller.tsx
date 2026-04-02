@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react'
-import Topbar from '../components/Topbar'
 import styles from './SudokuKiller.module.css'
 import { minSum, maxSum, pairKey, computeCombinations } from '../lib/sudoku-killer'
 
@@ -120,8 +119,6 @@ export default function SudokuKiller() {
   return (
     <div className={styles.root}>
       <main className="page">
-        <Topbar label="Sudoku Killer" />
-
         <section className={styles.app}>
           <div className={styles.hero2}>
             <div className={styles.k}>Killer Sudoku</div>

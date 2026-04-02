@@ -12,13 +12,7 @@ Este archivo y `CLAUDE.md` deben mantenerse alineados. Si cambia el catálogo, l
 
 `ludario` no es una sola tool: es un hub de herramientas ligeras para jugar mejor o resolver más rápido desde el teléfono o la compu, sin instalación ni cuenta.
 
-Hoy la app se organiza en tres grupos:
-
-- **Puzzles**: solvers y utilidades lógicas.
-- **Cartas**: scoreboards, simuladores y laboratorios de estrategia.
-- **Juegos**: minijuegos y contadores reutilizables.
-
-La experiencia principal arranca en `Home`, con catálogo, favoritos locales y filtros por categoría. Desde ahí se navega a tools independientes que comparten shell, navegación y convenciones de estado.
+La experiencia principal arranca en `Home`, con un catálogo unificado, favoritos locales para internos y externos, y filtros por etiquetas/temáticas. La exploración principal ya no depende de bloques rígidos como “Puzzles / Cartas / Juegos”, sino de tags como `Anotador`, `Herramienta`, `Registro`, `Cartas`, `Scoreboard`, `Juego`, `Libros`, `Selector`, `Externo`, `PacMan` y `Windows 98`.
 
 ---
 
@@ -37,7 +31,7 @@ La experiencia principal arranca en `Home`, con catálogo, favoritos locales y f
 Notas importantes:
 
 - La home usa **lazy loading** para todas las tools no-home.
-- Hay **prefetch suave** de rutas desde `Home` y `Topbar`.
+- Hay **prefetch suave** de rutas desde `Home` y el botón flotante `📚`.
 - `Chinchón Lab` usa **Web Worker** para simulación, torneo y benchmark, evitando bloquear el main thread.
 
 ---
@@ -62,8 +56,11 @@ npm run test:watch
 
 ### Home
 - Ruta: `/#/`
-- Catálogo principal de tools con favoritos persistidos en `localStorage`.
-- Filtros por categoría (`Puzzles`, `Cartas`, `Juegos`).
+- Biblioteca principal en una sola grilla filtrable.
+- Favoritos persistidos en `localStorage` para tools internas y portales externos.
+- Búsqueda por nombre, etiqueta y chips.
+- Filtros por etiquetas/temáticas de uso.
+- Los portales externos viven dentro del mismo compendio, no en secciones aparte.
 
 ### Sudoku Killer
 - Ruta: `/#/tools/sudoku-killer`
@@ -104,6 +101,26 @@ npm run test:watch
 - Ruta: `/#/tools/point-counter`
 - Marcador genérico por jugador con suma rápida, toolbox por long press y persistencia local.
 
+### Dosto
+- Portal externo destacado desde `Home`.
+- URL: `https://facundoraulbistolfi.github.io/dosto/`
+- Biblioteca personal interactiva de Dostoievski publicada aparte en GitHub Pages.
+
+### Win98 Maze
+- Portal externo destacado desde `Home`.
+- URL: `https://facundoraulbistolfi.github.io/win98maze/`
+- Laberinto 3D en primera persona con estética Windows 98.
+
+### Batalla Naval 98
+- Portal externo destacado desde `Home`.
+- URL: `https://facundoraulbistolfi.github.io/win98_battleship/`
+- Batalla naval retro con interfaz Windows 98, power-ups y modos local/vs compu.
+
+### Toca Toca
+- Portal externo destacado desde `Home`.
+- URL: `https://facundoraulbistolfi.github.io/toca-toca/`
+- Ruleta web estilo casino para decidir a quién le toca, con estadísticas persistentes.
+
 ---
 
 ## Rutas
@@ -133,21 +150,21 @@ HashRouter evita configuración extra de servidor y funciona bien en GitHub Page
 - `src/App.tsx`
   - define rutas;
   - deja `Home` eager;
-  - lazy-load de las demás pages con `Suspense`.
+  - lazy-load de las demás pages con `Suspense`;
+  - monta un botón flotante `📚` para volver a `Home` en todas las tools.
 - `src/lib/page-loaders.ts`
   - centraliza loaders;
   - expone `lazyPage`;
   - expone `prefetchRoute(path)`.
-- `src/components/Topbar.tsx`
-  - nav compartida;
-  - drawer mobile;
-  - indica la vista actual;
+- `src/components/HomeCornerButton.tsx`
+  - retorno compartido a `Home`;
+  - botón chico fijo en esquina;
   - prefetch al hover/focus.
 
 ### Home
 
 - `src/pages/Home.tsx`
-  - define catálogo visible (`TOOLS`);
+  - renderiza el compendio unificado desde `CATALOG_ITEMS`;
   - maneja favoritos;
   - usa `prefetchRoute`.
 
@@ -177,7 +194,9 @@ Módulos clave actuales:
 ### Estilos
 
 - `src/styles/site.css`
-  - shell global, home, topbar, layout general.
+  - shell global, botón flotante de retorno, layout general y fallback compartido.
+- `src/styles/home.css`
+  - dirección visual y layout editorial de `Home`.
 - `src/styles/chinchon-arena-utilities.css`
   - capa visual específica de `Chinchón Lab`.
 - `src/pages/*.module.css`
@@ -198,7 +217,7 @@ ludario/
 │   ├── App.tsx
 │   ├── main.tsx
 │   ├── components/
-│   │   └── Topbar.tsx
+│   │   └── HomeCornerButton.tsx
 │   ├── lib/
 │   │   ├── page-loaders.ts
 │   │   ├── sudoku-killer.ts
@@ -219,6 +238,7 @@ ludario/
 │   │       └── Layout.tsx
 │   ├── styles/
 │   │   ├── site.css
+│   │   ├── home.css
 │   │   └── chinchon-arena-utilities.css
 │   └── workers/
 │       └── chinchon-lab.worker.ts
@@ -242,7 +262,8 @@ ludario/
   - `src/App.tsx`
   - `src/lib/page-loaders.ts`
   - `src/pages/Home.tsx`
-  - `src/components/Topbar.tsx`
+  - `src/components/HomeCornerButton.tsx`
+- Si se suma un portal externo, mantener su metadata sincronizada entre `src/lib/home-catalog.ts`, `README.md`, `AGENTS.md` y `CLAUDE.md`.
 - No meter lógica de negocio en CSS.
 - Si una feature pesada impacta interacción, considerar worker o extracción a helpers puros antes de seguir inflando el componente.
 
@@ -291,8 +312,8 @@ El CI corre `npm test` antes de `npm run build`.
 1. Crear la page en `src/pages/`.
 2. Si necesita carga diferida, agregar loader en `src/lib/page-loaders.ts`.
 3. Agregar la ruta en `src/App.tsx`.
-4. Agregar la card en `src/pages/Home.tsx`.
-5. Agregar el link en `src/components/Topbar.tsx`.
+4. Agregar la entrada interna o externa en `src/lib/home-catalog.ts`.
+5. Si es una tool interna, agregar la ruta en `src/App.tsx` y el loader en `src/lib/page-loaders.ts` si corresponde.
 6. Si tiene lógica propia, crear helpers en `src/lib/` y tests si corresponde.
 7. Si requiere estilo aislado, decidir entre CSS Module o hoja dedicada según el alcance.
 
@@ -323,6 +344,6 @@ npm run build
 Cuando trabajes en este repo, asumí esto:
 
 - es una app catálogo de tools, no una sola page;
-- `Home`, `Topbar`, `App` y `page-loaders` forman el shell compartido;
+- `Home`, `HomeCornerButton`, `App` y `page-loaders` forman el shell compartido;
 - `Chinchón Lab` es el subsistema más complejo y merece cuidado especial;
 - `AGENTS.md` y `CLAUDE.md` deben contar la misma verdad del proyecto.
