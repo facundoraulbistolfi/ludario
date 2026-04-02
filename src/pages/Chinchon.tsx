@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import Topbar from '../components/Topbar'
 import styles from './Chinchon.module.css'
 
 const LIMIT = 100
@@ -183,8 +182,6 @@ export default function Chinchon() {
   return (
     <div className={styles.root}>
       <main className="page">
-        <Topbar label="Chinchón" />
-
         <section className={styles.app}>
           {/* Decorative deck */}
           <div className={styles.deck}>

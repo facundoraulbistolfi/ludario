@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import Topbar from '../components/Topbar'
 import styles from './Truco.module.css'
 
 const MAX_SCORE = 30
@@ -127,8 +126,6 @@ export default function Truco() {
   return (
     <div className={styles.root}>
       <main className="page">
-        <Topbar label="Truco" sublabel="Buenas y malas" />
-
         {/* ── Cartel ── */}
         <header className={styles.cartel}>
           <Ornamento className={styles.ornTop} />

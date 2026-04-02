@@ -1,4 +1,4 @@
-# Ludario
+# 📚 Ludario
 
 > Herramientas web para juegos de mesa, cartas, sudokus y puzzles.
 
@@ -6,6 +6,8 @@
 [![Deploy](https://github.com/facundoraulbistolfi/ludario/actions/workflows/deploy.yml/badge.svg)](https://github.com/facundoraulbistolfi/ludario/actions/workflows/deploy.yml)
 
 **Sitio:** [facundoraulbistolfi.github.io/ludario](https://facundoraulbistolfi.github.io/ludario/)
+
+La home funciona como biblioteca principal del proyecto y cada mini app comparte un botón flotante `📚` para volver al inicio sin toolbar pesado. Todo el catálogo vive en una sola grilla filtrable, con favoritos locales tanto para tools internas como para portales externos curados, y filtros pensados como etiquetas de uso o temática.
 
 ---
 
@@ -29,6 +31,18 @@ Juego de memoria con sprites retro de Pac-Man, Space Invaders, Tetris y más. Mo
 ### Pac-Ludo
 Ludo temático de Pac-Man: movés fichas de fantasmas por el tablero, capturás rivales y buscás llegar al centro. Para 2–4 jugadores.
 
+### Dosto
+Portal externo invitado dentro de la home. Abre [Dosto](https://facundoraulbistolfi.github.io/dosto/), una biblioteca personal interactiva sobre Dostoievski publicada aparte en GitHub Pages.
+
+### Win98 Maze
+Portal externo invitado dentro de la home. Abre [Win98 Maze](https://facundoraulbistolfi.github.io/win98maze/), un laberinto 3D en primera persona con estética Windows 98.
+
+### Batalla Naval 98
+Portal externo invitado dentro de la home. Abre [Batalla Naval 98](https://facundoraulbistolfi.github.io/win98_battleship/), una batalla naval retro con look Windows 98 y power-ups.
+
+### Toca Toca
+Portal externo invitado dentro de la home. Abre [Toca Toca](https://facundoraulbistolfi.github.io/toca-toca/), una ruleta web estilo casino para decidir a quién le toca.
+
 ---
 
 
@@ -41,6 +55,7 @@ Ludo temático de Pac-Man: movés fichas de fantasmas por el tablero, capturás 
 - `/#/tools/chinchon-lab` → Chinchón Lab
 - `/#/tools/pacman-memory` → Pac-Memory
 - `/#/tools/pacman-ludo` → Pac-Ludo
+- `/#/tools/point-counter` → Contador de Puntos
 
 ---
 
@@ -52,7 +67,7 @@ Ludo temático de Pac-Man: movés fichas de fantasmas por el tablero, capturás 
 | Lenguaje | TypeScript (strict) |
 | Bundler | Vite 5 |
 | Routing | React Router 6 — HashRouter |
-| Estilos | CSS global + CSS Modules por page |
+| Estilos | CSS global + hoja dedicada para Home + CSS Modules por page |
 | Testing | Vitest |
 | Deploy | GitHub Actions → GitHub Pages |
 
@@ -82,8 +97,9 @@ npm run test:watch # correr tests en modo watch
 
 1. Crear `src/pages/MiTool.tsx` y `src/pages/MiTool.module.css`.
 2. Agregar la ruta en `src/App.tsx`.
-3. Agregar la card en `src/pages/Home.tsx` (array `TOOLS`).
-4. Agregar el link en `src/components/Topbar.tsx` (array `NAV_LINKS`).
+3. Agregar la entrada en `src/lib/home-catalog.ts` (`CATALOG_ITEMS`).
+4. Si querés sumar un portal externo curado, agregalo ahí para que aparezca en la home sin route interna.
+5. El botón flotante `📚` para volver al inicio ya se aplica desde `src/App.tsx`, así que no hace falta mantener una nav manual por tool.
 
 Ver [CLAUDE.md](./CLAUDE.md) para convenciones detalladas del proyecto.
 

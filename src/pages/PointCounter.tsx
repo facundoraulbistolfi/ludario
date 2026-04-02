@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import Topbar from '../components/Topbar'
 import styles from './PointCounter.module.css'
 
 type PlayerId = string
@@ -417,8 +416,6 @@ export default function PointCounter() {
 
   return (
     <main className="page">
-      <Topbar label="Contador de Puntos" sublabel="Scoreboard rápido" />
-
       <section className={styles.header}>
         <h1>Contador de Puntos</h1>
         <p>Tap corto para sumar rápido. Mantené presionado para suma avanzada y edición manual.</p>
