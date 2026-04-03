@@ -5,7 +5,14 @@ const DIVERTIDO_WEIGHTS = [1, 2, 3, 4, 5, 6] as const;
 const HARDCORE_WEIGHTS = [1, 2, 3, 5, 8, 12] as const;
 const GHOST_CHANCE: Record<"divertido" | "hardcore", number> = { divertido: 20, hardcore: 15 };
 
-export const SECTION_COLORS = ["#2121DE", "#FF0000", "#00FFFF", "#FFB8FF", "#FF7722", "#FFE000"];
+export const SECTION_COLORS = ["#2F46FF", "#FF315A", "#1DE7FF", "#FF8AF2", "#FF9A2F", "#FFE35A"];
+
+function resetTokenToBase(token: Token) {
+  token.state = "base";
+  token.pathIdx = -1;
+  token.homeIdx = -1;
+  token.facing = IDLE_TOKEN_FACING;
+}
 
 export function cloneTokens(tokens: TokenMap): TokenMap {
   const next: TokenMap = {};
@@ -57,8 +64,8 @@ export function getRouletteConfig(mode: GameMode, isAllBase: boolean): RouletteS
   if (isAllBase) {
     const ghostWeight = GHOST_CHANCE[mode === "hardcore" ? "hardcore" : "divertido"];
     return [
-      { value: 6, label: "👻", weight: ghostWeight, color: "#00FF88" },
-      { value: 0, label: "✕", weight: 100 - ghostWeight, color: "#330011" },
+      { value: 1, label: "👻", weight: ghostWeight, color: "#2B6B59" },
+      { value: 0, label: "", weight: 100 - ghostWeight, color: "#5B2431" },
     ];
   }
 
@@ -72,24 +79,64 @@ export function getRouletteConfig(mode: GameMode, isAllBase: boolean): RouletteS
 }
 
 export function resolveRouletteAngle(angle: number, sections: RouletteSection[]): number {
+  return resolveRouletteSelection(angle, sections).value;
+}
+
+export function resolveRouletteSelection(angle: number, sections: RouletteSection[]): { value: number; snappedAngle: number } {
   const totalWeight = sections.reduce((sum, section) => sum + section.weight, 0);
   const normalized = ((360 - (angle % 360)) % 360 + 360) % 360;
   let cumulative = 0;
 
   for (const section of sections) {
+    const startAngle = cumulative;
     cumulative += (section.weight / totalWeight) * 360;
-    if (normalized < cumulative) return section.value;
+    if (normalized < cumulative) {
+      const middleAngle = startAngle + (cumulative - startAngle) / 2;
+      const snappedAngle = ((360 - middleAngle) % 360 + 360) % 360;
+      return { value: section.value, snappedAngle };
+    }
   }
 
-  return sections[sections.length - 1]?.value ?? 1;
+  const fallback = sections[sections.length - 1];
+  return { value: fallback?.value ?? 1, snappedAngle: angle };
 }
 
-export function executeMove(allTokens: TokenMap, pid: number, tokenId: string, dice: number, playerCount: number): ExecuteMoveResult {
+export function getCombatRouletteConfig(mode: Exclude<GameMode, "normal">): RouletteSection[] {
+  const successWeight = GHOST_CHANCE[mode === "hardcore" ? "hardcore" : "divertido"];
+  return [
+    { value: 1, label: "🔪", weight: successWeight, color: "#2B6B59" },
+    { value: 0, label: "", weight: 100 - successWeight, color: "#5B2431" },
+  ];
+}
+
+export function resolveCombat(tokens: TokenMap, capturedTokenIds: string[]): TokenMap {
+  const nextTokens = cloneTokens(tokens);
+  const targetIds = new Set(capturedTokenIds);
+
+  for (const playerId in nextTokens) {
+    nextTokens[playerId].forEach((token) => {
+      if (targetIds.has(token.id)) resetTokenToBase(token);
+    });
+  }
+
+  return nextTokens;
+}
+
+export function executeMove(
+  allTokens: TokenMap,
+  pid: number,
+  tokenId: string,
+  dice: number,
+  playerCount: number,
+  options?: { autoCapture?: boolean },
+): ExecuteMoveResult {
   const nextTokens = cloneTokens(allTokens);
   const tokenIndex = nextTokens[pid].findIndex((token) => token.id === tokenId);
   const token = nextTokens[pid][tokenIndex];
   const segments = buildMoveSegments(token, pid, dice);
   const capturedTokenIds: string[] = [];
+  const contestedTokenIds: string[] = [];
+  const autoCapture = options?.autoCapture ?? true;
 
   if (token.state === "base" && dice === 6) {
     token.state = "path";
@@ -128,17 +175,18 @@ export function executeMove(allTokens: TokenMap, pid: number, tokenId: string, d
       if (player === pid) continue;
       nextTokens[player].forEach((other) => {
         if (other.state === "path" && other.pathIdx === token.pathIdx) {
-          other.state = "base";
-          other.pathIdx = -1;
-          other.homeIdx = -1;
-          other.facing = IDLE_TOKEN_FACING;
-          captured = true;
-          capturedTokenIds.push(other.id);
+          if (autoCapture) {
+            resetTokenToBase(other);
+            captured = true;
+            capturedTokenIds.push(other.id);
+          } else {
+            contestedTokenIds.push(other.id);
+          }
         }
       });
     }
   }
 
   const finished = nextTokens[pid].every((piece) => piece.state === "finished");
-  return { tokens: nextTokens, captured, capturedTokenIds, finished, segments };
+  return { tokens: nextTokens, captured, capturedTokenIds, contestedTokenIds, finished, segments };
 }

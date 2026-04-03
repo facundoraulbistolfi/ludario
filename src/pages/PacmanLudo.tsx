@@ -7,9 +7,11 @@ import {
   canTokenMove,
   createTokens,
   executeMove,
+  getCombatRouletteConfig,
   getRouletteConfig,
   isSweating,
-  resolveRouletteAngle,
+  resolveCombat,
+  resolveRouletteSelection,
 } from "../lib/pac-ludo/game";
 import {
   buildRuntimePlayers,
@@ -37,6 +39,50 @@ function describeArc(cx: number, cy: number, radius: number, startAngle: number,
   const end = polarToCartesian(cx, cy, radius, startAngle);
   const largeArc = endAngle - startAngle > 180 ? 1 : 0;
   return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 0 ${end.x} ${end.y} Z`;
+}
+
+function getTextColorForHex(hex: string) {
+  const normalized = hex.replace("#", "");
+  const expanded = normalized.length === 3
+    ? normalized.split("").map((chunk) => `${chunk}${chunk}`).join("")
+    : normalized;
+
+  const r = Number.parseInt(expanded.slice(0, 2), 16);
+  const g = Number.parseInt(expanded.slice(2, 4), 16);
+  const b = Number.parseInt(expanded.slice(4, 6), 16);
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+
+  return luminance > 0.58 ? "#090d17" : "#f8f5ea";
+}
+
+function blendHex(hex: string, targetHex: string, amount: number) {
+  const normalize = (value: string) => {
+    const raw = value.replace("#", "");
+    return raw.length === 3 ? raw.split("").map((chunk) => `${chunk}${chunk}`).join("") : raw;
+  };
+
+  const source = normalize(hex);
+  const target = normalize(targetHex);
+  const mix = (start: number, end: number) => Math.round(start + (end - start) * amount);
+
+  const red = mix(Number.parseInt(source.slice(0, 2), 16), Number.parseInt(target.slice(0, 2), 16));
+  const green = mix(Number.parseInt(source.slice(2, 4), 16), Number.parseInt(target.slice(2, 4), 16));
+  const blue = mix(Number.parseInt(source.slice(4, 6), 16), Number.parseInt(target.slice(4, 6), 16));
+
+  return `#${red.toString(16).padStart(2, "0")}${green.toString(16).padStart(2, "0")}${blue.toString(16).padStart(2, "0")}`;
+}
+
+function createPlayerRoulettePalette(color: string) {
+  const palette: Record<number, string> = {
+    1: blendHex(color, "#ffffff", 0.54),
+    2: blendHex(color, "#ffffff", 0.34),
+    3: blendHex(color, "#ffffff", 0.14),
+    4: blendHex(color, "#000000", 0.08),
+    5: blendHex(color, "#000000", 0.22),
+    6: blendHex(color, "#000000", 0.38),
+  };
+
+  return palette;
 }
 
 function useWindowSize() {
@@ -133,60 +179,73 @@ function RouletteWheel({
 }) {
   const cx = size / 2;
   const cy = size / 2;
-  const radius = size / 2 - 4;
+  const pointerOffset = Math.max(24, size * 0.1);
+  const radius = size / 2 - 8;
   const totalWeight = sections.reduce((sum, section) => sum + section.weight, 0);
+  const resultLabel = result !== null
+    ? sections.find((section) => section.value === result)?.label ?? (result === 0 ? "✕" : String(result))
+    : null;
   let cumulativeAngle = 0;
 
   return (
-    <svg width={size} height={size + 20} viewBox={`0 0 ${size} ${size + 20}`} style={{ display: "block" }}>
-      <polygon points={`${cx - 10},2 ${cx + 10},2 ${cx},18`} fill="#FFE000" stroke="#000" strokeWidth={1} />
-      <g transform={`rotate(${angle}, ${cx}, ${cy + 20})`} style={{ transition: spinning ? "none" : "transform 0.1s" }}>
-        <g transform="translate(0, 20)">
-          <circle cx={cx} cy={cy} r={radius} fill="#0a0a2a" stroke="#FFE00066" strokeWidth={3} />
+    <svg width={size} height={size + pointerOffset} viewBox={`0 0 ${size} ${size + pointerOffset}`} style={{ display: "block" }}>
+      <polygon
+        points={`${cx - size * 0.052},6 ${cx + size * 0.052},6 ${cx},${pointerOffset - 4}`}
+        fill="#FFE27A"
+        stroke="#0c101b"
+        strokeWidth={2}
+      />
+      <g transform={`rotate(${angle}, ${cx}, ${cy + pointerOffset})`} style={{ transition: spinning ? "none" : "transform 0.1s" }}>
+        <g transform={`translate(0, ${pointerOffset})`}>
+          <circle cx={cx} cy={cy} r={radius + 5} fill="#070b18" stroke="#FFE27A33" strokeWidth={2} />
+          <circle cx={cx} cy={cy} r={radius} fill="#0c1328" stroke="#10192d" strokeWidth={3} />
           {sections.map((section, index) => {
             const sliceAngle = (section.weight / totalWeight) * 360;
             const startAngle = cumulativeAngle;
             const endAngle = cumulativeAngle + sliceAngle;
             cumulativeAngle = endAngle;
             const middle = (startAngle + endAngle) / 2;
-            const labelPos = polarToCartesian(cx, cy, radius * 0.62, middle);
-            const fontSize = section.label === "👻" ? Math.max(14, size * 0.09) : Math.max(12, size * 0.08);
+            const labelPos = polarToCartesian(cx, cy, radius * 0.67, middle);
+            const isIconLabel = /[^\d]/.test(section.label);
+            const fontSize = isIconLabel ? Math.max(14, size * 0.085) : Math.max(12, size * 0.068);
+            const labelColor = section.label === "✕" ? "#f6e9df" : getTextColorForHex(section.color);
+            const shadow = labelColor === "#090d17" ? "0 1px 0 rgba(255,255,255,0.18)" : "0 2px 0 rgba(0,0,0,0.35)";
 
             return (
               <g key={index}>
-                <path d={describeArc(cx, cy, radius, startAngle, endAngle)} fill={section.color} stroke="#000119" strokeWidth={2} />
+                <path d={describeArc(cx, cy, radius, startAngle, endAngle)} fill={section.color} stroke="#0a0f1d" strokeWidth={2.5} />
                 <text
                   x={labelPos.x}
                   y={labelPos.y}
                   textAnchor="middle"
                   dominantBaseline="central"
-                  fill={section.label === "✕" ? "#ff4444" : "#fff"}
+                  fill={labelColor}
                   fontWeight="900"
                   fontSize={fontSize}
-                  fontFamily="'Courier New', monospace"
-                  style={{ textShadow: "0 0 4px #000", pointerEvents: "none" }}
+                  fontFamily={PIXEL_FONT}
+                  style={{ textShadow: shadow, pointerEvents: "none" }}
                 >
                   {section.label}
                 </text>
               </g>
             );
           })}
-          <circle cx={cx} cy={cy} r={Math.max(8, radius * 0.12)} fill="#111" stroke="#FFE000" strokeWidth={2} />
+          <circle cx={cx} cy={cy} r={Math.max(12, radius * 0.13)} fill="#0a0f1d" stroke="#FFE27A" strokeWidth={3} />
         </g>
       </g>
-      {result !== null && (
+      {resultLabel !== null && (
         <text
           x={cx}
-          y={cy + 20}
+          y={cy + pointerOffset}
           textAnchor="middle"
           dominantBaseline="central"
-          fill="#FFE000"
-          fontSize={Math.max(20, size * 0.15)}
+          fill="#FFE27A"
+          fontSize={/[^\d]/.test(resultLabel) ? Math.max(18, size * 0.09) : Math.max(16, size * 0.075)}
           fontWeight="900"
-          fontFamily="'Courier New', monospace"
-          style={{ textShadow: "0 0 12px #FFE000, 0 0 24px #FFE00088", pointerEvents: "none" }}
+          fontFamily={PIXEL_FONT}
+          style={{ textShadow: "0 0 14px rgba(255, 226, 122, 0.25)", pointerEvents: "none" }}
         >
-          {result === 0 ? "✕" : result}
+          {resultLabel}
         </text>
       )}
     </svg>
@@ -194,6 +253,7 @@ function RouletteWheel({
 }
 
 const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
   @keyframes pacLudoPick { from { filter: brightness(1); } to { filter: brightness(1.45); } }
   @keyframes pacLudoFloat { from { transform: translateY(0); } to { transform: translateY(-6px); } }
   @keyframes pacLudoDrop { 0% { transform: translateY(0); opacity: .85; } 50% { transform: translateY(5px); opacity: .35; } 100% { transform: translateY(0); opacity: .85; } }
@@ -201,6 +261,14 @@ const CSS = `
   html, body, #root { height: 100%; }
   ::-webkit-scrollbar { width: 0; height: 0; }
 `;
+
+const ROULETTE_DURATION_MS = 5000;
+const ROULETTE_DEGREES_PER_MS = 0.42;
+const ROULETTE_STOP_GUARD_MS = 250;
+const PIXEL_FONT = "'Press Start 2P', monospace";
+const ROULETTE_DURATION_SECONDS_LABEL = String(ROULETTE_DURATION_MS / 1000);
+type RollKind = "number" | "entry";
+type RoulettePurpose = RollKind | "battle";
 
 export default function PacmanLudo() {
   const { width: winWidth, height: winHeight } = useWindowSize();
@@ -215,22 +283,33 @@ export default function PacmanLudo() {
   const [cur, setCur] = useState(0);
   const [dice, setDice] = useState(1);
   const [rolling, setRolling] = useState(false);
-  const [phase, setPhase] = useState<"roll" | "pick" | "moving" | "wait">("roll");
+  const [phase, setPhase] = useState<"roll" | "pick" | "moving" | "wait" | "battle">("roll");
   const [msg, setMsg] = useState("");
   const [winner, setWinner] = useState<number | null>(null);
   const [autoPlay, setAutoPlay] = useState(false);
   const [consecutiveSixes, setConsecutiveSixes] = useState<Record<number, number>>({});
   const [rouletteOpen, setRouletteOpen] = useState(false);
+  const [roulettePurpose, setRoulettePurpose] = useState<RoulettePurpose | null>(null);
   const [rouletteAngle, setRouletteAngle] = useState(0);
   const [rouletteSpinning, setRouletteSpinning] = useState(false);
   const [rouletteResult, setRouletteResult] = useState<number | null>(null);
+  const [rouletteElapsedMs, setRouletteElapsedMs] = useState(0);
+  const [selectedRollKind, setSelectedRollKind] = useState<RollKind | null>(null);
+  const [pendingBattle, setPendingBattle] = useState<{
+    playerId: number;
+    diceValue: number;
+    rollKind: RollKind;
+    tokens: TokenMap;
+    contestedTokenIds: string[];
+    finished: boolean;
+  } | null>(null);
   const [movingToken, setMovingToken] = useState<{ id: string; row: number; col: number; facing: FacingDirection } | null>(null);
   const [menuDots, setMenuDots] = useState<{ row: number; col: number; eaten: boolean }[]>([]);
   const [menuPac, setMenuPac] = useState<{ row: number; col: number; facing: FacingDirection }>({ row: 7, col: 7, facing: "right" });
 
-  const rouletteSpeedRef = useRef(0);
   const rouletteRafRef = useRef<number | null>(null);
-  const rouletteStartedAtRef = useRef(0);
+  const rouletteAngleRef = useRef(0);
+  const rouletteOpenedAtRef = useRef(0);
   const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const moveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -253,7 +332,29 @@ export default function PacmanLudo() {
   const boardSize = getBoardSize(cellSize);
   const tokenSize = Math.max(14, Math.round(cellSize * 0.82));
   const diceSize = isMobile ? 48 : 56;
+  const rouletteChromeReserve = isMobile ? 280 : 250;
+  const rouletteWheelSize = Math.max(
+    isMobile ? 210 : 320,
+    Math.min(winWidth - (isMobile ? 28 : 80), winHeight - rouletteChromeReserve, isMobile ? 380 : 540),
+  );
   const currentPlayer = players[cur] ?? players[0];
+  const currentPlayerTokens = tokens[cur] || [];
+  const currentAllInBase = allInBase(currentPlayerTokens);
+  const rouletteSections = useMemo(() => {
+    if (gameMode === "normal" || !roulettePurpose) return [];
+    if (roulettePurpose === "battle") return getCombatRouletteConfig(gameMode);
+    const baseSections = getRouletteConfig(gameMode, roulettePurpose === "entry");
+    if (roulettePurpose !== "number" || !currentPlayer) return baseSections;
+
+    const playerPalette = createPlayerRoulettePalette(currentPlayer.color);
+    return baseSections.map((section) => ({
+      ...section,
+      color: playerPalette[section.value] ?? section.color,
+    }));
+  }, [currentPlayer, gameMode, roulettePurpose]);
+  const rouletteRemainingSeconds = Math.max(0, (ROULETTE_DURATION_MS - rouletteElapsedMs) / 1000);
+  const rouletteCountdownLabel = rouletteSpinning ? rouletteRemainingSeconds.toFixed(1) : "0.0";
+  const rouletteProgress = Math.max(0, Math.min(1, rouletteElapsedMs / ROULETTE_DURATION_MS));
   const currentFinishedCount = currentPlayer ? (tokens[cur] || []).filter((token) => token.state === "finished").length : 0;
   const showCenterCharacter = useMemo(
     () => shouldShowCenterCharacter(players.map((player) => player.id)),
@@ -293,6 +394,11 @@ export default function PacmanLudo() {
     clearRollInterval();
     clearRouletteAnimation();
     setMovingToken(null);
+  }
+
+  function applyRouletteAngle(nextAngle: number) {
+    rouletteAngleRef.current = nextAngle;
+    setRouletteAngle(nextAngle);
   }
 
   useEffect(() => () => clearTransientState(), []);
@@ -346,7 +452,7 @@ export default function PacmanLudo() {
       if (phase === "pick" && picked >= 1 && picked <= movableTokens.length) {
         const token = movableTokens[picked - 1];
         if (token && canTokenMove(token, cur, dice)) {
-          animateMove(token.id, cur, dice, tokens);
+          animateMove(token.id, cur, dice, selectedRollKind ?? "number", tokens);
         }
       }
     };
@@ -378,8 +484,12 @@ export default function PacmanLudo() {
   function goToMenu() {
     clearTransientState();
     setRouletteOpen(false);
+    setRoulettePurpose(null);
     setRouletteSpinning(false);
     setRouletteResult(null);
+    setRouletteElapsedMs(0);
+    setSelectedRollKind(null);
+    setPendingBattle(null);
     setRolling(false);
     setScreen("menu");
   }
@@ -395,8 +505,12 @@ export default function PacmanLudo() {
     setWinner(null);
     setScreen("game");
     setRouletteOpen(false);
+    setRoulettePurpose(null);
     setRouletteSpinning(false);
     setRouletteResult(null);
+    setRouletteElapsedMs(0);
+    setSelectedRollKind(null);
+    setPendingBattle(null);
     setMsg(`¡Turno de ${players[0].displayName}! ${gameMode === "normal" ? "Tirá el dado" : "Girá la ruleta"}`);
     setConsecutiveSixes(Object.fromEntries(Array.from({ length: playerCount }, (_, index) => [index, 0])));
   }
@@ -405,12 +519,15 @@ export default function PacmanLudo() {
     const nextPlayer = (fromPlayer + 1) % playerCount;
     setCur(nextPlayer);
     setPhase("roll");
+    setSelectedRollKind(null);
+    setPendingBattle(null);
     setMsg(`¡Turno de ${players[nextPlayer].displayName}! ${gameMode === "normal" ? "Tirá el dado" : "Girá la ruleta"}`);
     setConsecutiveSixes((prev) => ({ ...prev, [fromPlayer]: 0 }));
   }
 
-  function finishMove(playerId: number, diceValue: number, nextTokens: TokenMap, captured: boolean, finished: boolean) {
+  function finishMove(playerId: number, diceValue: number, rollKind: RollKind, nextTokens: TokenMap, captured: boolean, finished: boolean) {
     setMovingToken(null);
+    setSelectedRollKind(null);
     setTokens(nextTokens);
 
     if (finished) {
@@ -426,7 +543,7 @@ export default function PacmanLudo() {
       return;
     }
 
-    if (diceValue === 6) {
+    if (rollKind === "number" && diceValue === 6) {
       setMsg(`¡${actor.displayName} sacó 6, vuelve a tirar!`);
       queueTransition(() => setPhase("roll"), 360);
       return;
@@ -435,15 +552,42 @@ export default function PacmanLudo() {
     queueTransition(() => doNextTurn(playerId), 520);
   }
 
-  function animateMove(tokenId: string, playerId: number, diceValue: number, currentTokens: TokenMap) {
+  function openRoulette(purpose: RoulettePurpose) {
+    setRoulettePurpose(purpose);
+    setRouletteOpen(true);
+    setRouletteSpinning(true);
+    setRouletteResult(null);
+    setRouletteElapsedMs(0);
+    const startedAt = performance.now();
+    rouletteOpenedAtRef.current = startedAt;
+    const startAngle = rouletteAngleRef.current;
+
+    const spin = (now: number) => {
+      const elapsed = now - startedAt;
+      setRouletteElapsedMs(Math.min(elapsed, ROULETTE_DURATION_MS));
+      const angle = startAngle + elapsed * ROULETTE_DEGREES_PER_MS;
+      applyRouletteAngle(angle);
+
+      if (elapsed >= ROULETTE_DURATION_MS) {
+        finishRoulette(angle);
+        return;
+      }
+
+      rouletteRafRef.current = requestAnimationFrame(spin);
+    };
+
+    rouletteRafRef.current = requestAnimationFrame(spin);
+  }
+
+  function animateMove(tokenId: string, playerId: number, diceValue: number, rollKind: RollKind, currentTokens: TokenMap) {
     clearTransitionTimeout();
     clearMoveTimeout();
     setPhase("moving");
-    const result = executeMove(currentTokens, playerId, tokenId, diceValue, playerCount);
+    const result = executeMove(currentTokens, playerId, tokenId, diceValue, playerCount, { autoCapture: gameMode === "normal" });
     const segments = result.segments;
 
     if (segments.length === 0) {
-      finishMove(playerId, diceValue, result.tokens, result.captured, result.finished);
+      finishMove(playerId, diceValue, rollKind, result.tokens, result.captured, result.finished);
       return;
     }
 
@@ -459,7 +603,26 @@ export default function PacmanLudo() {
         moveTimeoutRef.current = setTimeout(advance, stepDuration);
       } else {
         moveTimeoutRef.current = setTimeout(
-          () => finishMove(playerId, diceValue, result.tokens, result.captured, result.finished),
+          () => {
+            if (result.contestedTokenIds.length > 0) {
+              setMovingToken(null);
+              setTokens(result.tokens);
+              setPendingBattle({
+                playerId,
+                diceValue,
+                rollKind,
+                tokens: result.tokens,
+                contestedTokenIds: result.contestedTokenIds,
+                finished: result.finished,
+              });
+              setPhase("battle");
+              setMsg(`¡${players[playerId].displayName} cayó sobre un rival! Girá la ruleta de ataque`);
+              openRoulette("battle");
+              return;
+            }
+
+            finishMove(playerId, diceValue, rollKind, result.tokens, result.captured, result.finished);
+          },
           stepDuration,
         );
       }
@@ -468,15 +631,21 @@ export default function PacmanLudo() {
     advance();
   }
 
-  function processRollResult(finalValue: number) {
+  function processRollResult(finalValue: number, rollKind: RollKind) {
+    setSelectedRollKind(null);
+    const moveValue = rollKind === "entry" && finalValue > 0 ? 6 : finalValue;
+
     if (finalValue === 0) {
+      if (gameMode !== "normal") {
+        setConsecutiveSixes((prev) => ({ ...prev, [cur]: 0 }));
+      }
       setMsg(`${currentPlayer.displayName} no sacó personaje... pierde turno`);
       setPhase("wait");
       queueTransition(() => doNextTurn(cur), 1000);
       return;
     }
 
-    if (gameMode !== "normal" && finalValue === 6) {
+    if (gameMode !== "normal" && rollKind === "number" && finalValue === 6) {
       const nextCount = (consecutiveSixes[cur] || 0) + 1;
       setConsecutiveSixes((prev) => ({ ...prev, [cur]: nextCount }));
       if (nextCount >= 3) {
@@ -490,9 +659,9 @@ export default function PacmanLudo() {
       setConsecutiveSixes((prev) => ({ ...prev, [cur]: 0 }));
     }
 
-    const candidates = (tokens[cur] || []).filter((token) => canTokenMove(token, cur, finalValue));
+    const candidates = (tokens[cur] || []).filter((token) => canTokenMove(token, cur, moveValue));
     if (candidates.length === 0) {
-      if (finalValue === 6) {
+      if (rollKind === "number" && finalValue === 6) {
         setMsg(`${currentPlayer.displayName} no puede mover, pero sacó 6. Va de nuevo`);
         setPhase("roll");
       } else {
@@ -504,12 +673,15 @@ export default function PacmanLudo() {
     }
 
     if (candidates.length === 1) {
-      setMsg(`Sacó ${finalValue}, moviendo...`);
-      queueTransition(() => animateMove(candidates[0].id, cur, finalValue, tokens), 280);
+      const rollLabel = rollKind === "entry" ? "Salió fantasma" : `Sacó ${finalValue}`;
+      setMsg(`${rollLabel}, moviendo...`);
+      queueTransition(() => animateMove(candidates[0].id, cur, moveValue, rollKind, tokens), 280);
       return;
     }
 
-    setMsg(`Sacó ${finalValue}. Elegí cuál ficha mover${!isMobile ? ` (${candidates.map((_, index) => index + 1).join(", ")})` : ""}`);
+    setSelectedRollKind(rollKind);
+    const rollLabel = rollKind === "entry" ? "Salió fantasma" : `Sacó ${finalValue}`;
+    setMsg(`${rollLabel}. Elegí cuál ficha mover${!isMobile ? ` (${candidates.map((_, index) => index + 1).join(", ")})` : ""}`);
     setPhase("pick");
   }
 
@@ -526,85 +698,62 @@ export default function PacmanLudo() {
         const finalValue = Math.floor(Math.random() * 6) + 1;
         setDice(finalValue);
         setRolling(false);
-        processRollResult(finalValue);
+        processRollResult(finalValue, "number");
       }
     }, 80);
   }
 
-  function stopRoulette(currentAngle: number) {
+  function finishRoulette(currentAngle: number) {
     clearRouletteAnimation();
-    let speed = rouletteSpeedRef.current;
-    let angle = currentAngle;
+    const purpose = roulettePurpose;
+    const selection = resolveRouletteSelection(currentAngle, rouletteSections);
+    setRouletteResult(selection.value);
+    if (purpose !== "battle") {
+      setDice(purpose === "entry" ? (selection.value > 0 ? 6 : 0) : selection.value || 1);
+    }
+    setRouletteSpinning(false);
+    setRouletteElapsedMs(ROULETTE_DURATION_MS);
+    queueTransition(() => {
+      setRouletteOpen(false);
+      setRouletteResult(null);
+      setRoulettePurpose(null);
+      setRouletteElapsedMs(0);
 
-    const decelerate = () => {
-      speed *= 0.94;
-      angle += speed;
-      setRouletteAngle(angle);
-      if (speed > 0.2) {
-        rouletteRafRef.current = requestAnimationFrame(decelerate);
+      if (purpose === "battle") {
+        const battle = pendingBattle;
+        setPendingBattle(null);
+        if (!battle) return;
+
+        const battleWon = selection.value > 0;
+        const resolvedTokens = battleWon ? resolveCombat(battle.tokens, battle.contestedTokenIds) : battle.tokens;
+        finishMove(battle.playerId, battle.diceValue, battle.rollKind, resolvedTokens, battleWon, battle.finished);
         return;
       }
 
-      setRouletteAngle(angle);
-      const sections = getRouletteConfig(gameMode, allInBase(tokens[cur] || []));
-      const result = resolveRouletteAngle(angle, sections);
-      setRouletteResult(result);
-      setDice(result || 1);
-      setRouletteSpinning(false);
-      queueTransition(() => {
-        setRouletteOpen(false);
-        setRouletteResult(null);
-        processRollResult(result);
-      }, 1200);
-    };
-
-    rouletteRafRef.current = requestAnimationFrame(decelerate);
+      if (purpose === "entry" || purpose === "number") {
+        processRollResult(selection.value, purpose);
+      }
+    }, 1200);
   }
 
-  function handleRouletteOpen() {
-    if (phase !== "roll" || rouletteSpinning) return;
-
-    setRouletteOpen(true);
-    setRouletteSpinning(true);
-    setRouletteResult(null);
-    rouletteSpeedRef.current = (8 + Math.random() * 6) * 0.68;
-    rouletteStartedAtRef.current = performance.now();
-    let angle = rouletteAngle;
-
-    const spin = (now: number) => {
-      if (now - rouletteStartedAtRef.current > 20000) {
-        rouletteSpeedRef.current = 0;
-        stopRoulette(angle);
-        return;
-      }
-      angle += rouletteSpeedRef.current;
-      setRouletteAngle(angle);
-      rouletteRafRef.current = requestAnimationFrame(spin);
-    };
-
-    rouletteRafRef.current = requestAnimationFrame(spin);
+  function handleRouletteOpen(event?: { stopPropagation?: () => void }) {
+    event?.stopPropagation?.();
+    if (phase !== "roll" || rouletteSpinning || rouletteOpen) return;
+    openRoulette(currentAllInBase ? "entry" : "number");
   }
 
   function handleRouletteStop() {
     if (!rouletteSpinning) return;
-    clearRouletteAnimation();
-    const angle = rouletteAngle;
-    const sections = getRouletteConfig(gameMode, allInBase(tokens[cur] || []));
-    const result = resolveRouletteAngle(angle, sections);
-    setRouletteResult(result);
-    setDice(result || 1);
-    setRouletteSpinning(false);
-    queueTransition(() => {
-      setRouletteOpen(false);
-      setRouletteResult(null);
-      processRollResult(result);
-    }, 1200);
+    if (performance.now() - rouletteOpenedAtRef.current < ROULETTE_STOP_GUARD_MS) return;
+    finishRoulette(rouletteAngleRef.current);
   }
 
   function handleTokenClick(token: Token, playerId: number) {
     if (playerId !== cur || phase !== "pick") return;
     if (!canTokenMove(token, playerId, dice)) return;
-    animateMove(token.id, playerId, dice, tokens);
+    const rollKind = selectedRollKind ?? "number";
+    setSelectedRollKind(null);
+    animateMove(token.id, playerId, dice, rollKind, tokens);
   }
 
   const renderedTokenGroups = useMemo(() => {
@@ -634,7 +783,7 @@ export default function PacmanLudo() {
         style={{
           minHeight: "100dvh",
           background: "#000119",
-          fontFamily: "'Courier New', monospace",
+          fontFamily: PIXEL_FONT,
           color: "#FFE000",
           padding: isMobile ? 14 : 18,
           overflowY: "auto",
@@ -711,7 +860,7 @@ export default function PacmanLudo() {
                     height: isMobile ? 46 : 54,
                     fontSize: isMobile ? 18 : 22,
                     fontWeight: 900,
-                    fontFamily: "'Courier New', monospace",
+                    fontFamily: PIXEL_FONT,
                     background: playerCount === count ? "#FFE000" : "#111133",
                     color: playerCount === count ? "#000" : "#666",
                     border: `2px solid ${playerCount === count ? "#FFE000" : "#333366"}`,
@@ -740,7 +889,7 @@ export default function PacmanLudo() {
                     padding: isMobile ? "7px 10px" : "9px 16px",
                     fontSize: isMobile ? 10 : 12,
                     fontWeight: 900,
-                    fontFamily: "'Courier New', monospace",
+                    fontFamily: PIXEL_FONT,
                     background: gameMode === mode ? "#FFE000" : "#111133",
                     color: gameMode === mode ? "#000" : "#666",
                     border: `2px solid ${gameMode === mode ? "#FFE000" : "#333366"}`,
@@ -865,7 +1014,7 @@ export default function PacmanLudo() {
                           borderRadius: 10,
                           padding: "9px 10px",
                           marginBottom: 8,
-                          fontFamily: "'Courier New', monospace",
+                          fontFamily: PIXEL_FONT,
                         }}
                       >
                         {CHARACTER_SETS.map((set) => (
@@ -893,7 +1042,7 @@ export default function PacmanLudo() {
                           border: "1px solid #334",
                           borderRadius: 10,
                           padding: "9px 10px",
-                          fontFamily: "'Courier New', monospace",
+                          fontFamily: PIXEL_FONT,
                         }}
                       />
                     </div>
@@ -910,7 +1059,7 @@ export default function PacmanLudo() {
                 padding: isMobile ? "11px 34px" : "13px 44px",
                 fontSize: isMobile ? 14 : 16,
                 fontWeight: 900,
-                fontFamily: "'Courier New', monospace",
+                fontFamily: PIXEL_FONT,
                 background: "#FFE000",
                 color: "#000",
                 border: "none",
@@ -939,7 +1088,7 @@ export default function PacmanLudo() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          fontFamily: "'Courier New', monospace",
+          fontFamily: PIXEL_FONT,
           color: "#FFE000",
           padding: 16,
           textAlign: "center",
@@ -966,7 +1115,7 @@ export default function PacmanLudo() {
           style={{
             padding: "8px 28px",
             fontSize: 13,
-            fontFamily: "'Courier New', monospace",
+            fontFamily: PIXEL_FONT,
             background: "transparent",
             color: "#FFE000",
             border: "2px solid #FFE000",
@@ -986,7 +1135,7 @@ export default function PacmanLudo() {
       style={{
         height: "100dvh",
         background: "#000119",
-        fontFamily: "'Courier New', monospace",
+        fontFamily: PIXEL_FONT,
         color: "#fff",
         display: "flex",
         flexDirection: "column",
@@ -1239,7 +1388,7 @@ export default function PacmanLudo() {
           style={{
             padding: isMobile ? "2px 6px" : "3px 8px",
             fontSize: isMobile ? 7 : 8,
-            fontFamily: "'Courier New', monospace",
+            fontFamily: PIXEL_FONT,
             background: autoPlay ? "#FFE00022" : "transparent",
             color: autoPlay ? "#FFE000" : "#444",
             border: `1px solid ${autoPlay ? "#FFE000" : "#333"}`,
@@ -1255,7 +1404,7 @@ export default function PacmanLudo() {
           style={{
             padding: isMobile ? "2px 7px" : "3px 9px",
             fontSize: isMobile ? 7 : 8,
-            fontFamily: "'Courier New', monospace",
+            fontFamily: PIXEL_FONT,
             background: "transparent",
             color: "#444",
             border: "1px solid #333",
@@ -1275,53 +1424,189 @@ export default function PacmanLudo() {
             position: "fixed",
             inset: 0,
             zIndex: 100,
-            background: "rgba(0, 1, 25, 0.94)",
+            background: "linear-gradient(180deg, rgba(4, 7, 24, 0.94) 0%, rgba(1, 3, 15, 0.98) 100%)",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            justifyContent: "center",
+            justifyContent: isMobile ? "flex-start" : "center",
             cursor: rouletteSpinning ? "pointer" : "default",
-            padding: 16,
+            padding: isMobile ? "18px 14px 24px" : 22,
+            overflowY: "auto",
+            overscrollBehavior: "contain",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-            <PixelSprite character={currentPlayer} direction="right" size={isMobile ? 24 : 30} glow={currentPlayer.glow} />
-            <span style={{ color: currentPlayer.color, fontWeight: 900, fontSize: isMobile ? 14 : 18, letterSpacing: 3 }}>
-              {currentPlayer.displayName}
-            </span>
-          </div>
-          {allInBase(tokens[cur] || []) && (
-            <div style={{ fontSize: isMobile ? 9 : 11, color: "#aaa", marginBottom: 8, letterSpacing: 1 }}>
-              SIN PERSONAJES EN JUEGO — SACÁ UNO
-            </div>
-          )}
-          <RouletteWheel
-            sections={getRouletteConfig(gameMode, allInBase(tokens[cur] || []))}
-            angle={rouletteAngle}
-            size={Math.min(winWidth * 0.72, 320)}
-            spinning={rouletteSpinning}
-            result={rouletteResult}
-          />
           <div
             style={{
-              marginTop: 16,
-              fontSize: isMobile ? 12 : 15,
-              fontWeight: 900,
-              letterSpacing: 2,
-              color: rouletteSpinning ? "#FFE000" : rouletteResult === 0 ? "#ff4444" : "#00FF88",
-              textShadow: rouletteSpinning ? "0 0 10px #FFE00066" : "0 0 10px #00FF8866",
-              animation: rouletteSpinning ? "pacLudoPick .6s infinite alternate" : "none",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: isMobile ? 8 : 10,
+              width: "100%",
+              maxWidth: rouletteWheelSize + (isMobile ? 24 : 40),
+              margin: "0 auto",
             }}
           >
-            {rouletteSpinning ? "TOCÁ PARA FRENAR" : rouletteResult !== null ? (rouletteResult === 0 ? "¡NADA!" : `¡SACASTE ${rouletteResult}!`) : ""}
-          </div>
-          {gameMode !== "normal" && (consecutiveSixes[cur] || 0) > 0 && rouletteSpinning && (
-            <div style={{ marginTop: 8, fontSize: isMobile ? 8 : 10, color: "#ff8800", letterSpacing: 1 }}>
-              RACHA DE 6: {consecutiveSixes[cur]}/3
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: isMobile ? 6 : 8,
+                minWidth: 0,
+                width: "100%",
+              }}
+            >
+              <PixelSprite character={currentPlayer} direction="right" size={isMobile ? 24 : 30} glow={currentPlayer.glow} />
+              <span
+                style={{
+                  color: currentPlayer.color,
+                  fontWeight: 900,
+                  fontSize: isMobile ? 11 : 18,
+                  letterSpacing: isMobile ? 1.4 : 3,
+                  minWidth: 0,
+                  maxWidth: isMobile ? "min(100%, 220px)" : "100%",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  textAlign: "center",
+                }}
+              >
+                {currentPlayer.displayName}
+              </span>
             </div>
-          )}
+            <div
+              style={{
+                fontSize: isMobile ? 8 : 11,
+                color: rouletteSpinning ? "#FFE27A" : "#c8cfdf",
+                letterSpacing: isMobile ? 1 : 1.5,
+                textAlign: "center",
+                maxWidth: rouletteWheelSize + 30,
+                lineHeight: 1.35,
+              }}
+            >
+              {roulettePurpose === "battle"
+                ? rouletteSpinning
+                  ? isMobile
+                    ? `ATAQUE · ${ROULETTE_DURATION_SECONDS_LABEL}S MÁX`
+                    : `RULETA DE ATAQUE · MÁXIMO ${ROULETTE_DURATION_SECONDS_LABEL} SEGUNDOS`
+                  : rouletteResult !== null
+                    ? "ATAQUE RESUELTO"
+                    : "RULETA DE ATAQUE"
+                : roulettePurpose === "entry"
+                  ? rouletteSpinning
+                    ? isMobile
+                      ? `SALIDA · ${ROULETTE_DURATION_SECONDS_LABEL}S MÁX`
+                      : `SALIDA DE BASE · MÁXIMO ${ROULETTE_DURATION_SECONDS_LABEL} SEGUNDOS`
+                    : rouletteResult !== null
+                      ? "SALIDA RESUELTA"
+                      : "GIRÁ LA RULETA"
+                  : rouletteSpinning
+                    ? isMobile
+                      ? `GIRO FIJO · ${ROULETTE_DURATION_SECONDS_LABEL}S MÁX`
+                      : `GIRO FIJO · MÁXIMO ${ROULETTE_DURATION_SECONDS_LABEL} SEGUNDOS`
+                    : rouletteResult !== null
+                      ? "RESULTADO DEFINIDO"
+                      : "GIRÁ LA RULETA"}
+            </div>
+            <div
+              style={{
+                width: Math.min(rouletteWheelSize, isMobile ? 280 : 340),
+                display: "flex",
+                flexDirection: "column",
+                gap: 5,
+                alignItems: "stretch",
+              }}
+            >
+              <div
+                style={{
+                  height: 8,
+                  borderRadius: 999,
+                  background: "rgba(255, 226, 122, 0.12)",
+                  border: "1px solid rgba(255, 226, 122, 0.22)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${rouletteProgress * 100}%`,
+                    height: "100%",
+                    background: "linear-gradient(90deg, #ffe27a 0%, #f5b54c 100%)",
+                    boxShadow: "0 0 10px rgba(255, 226, 122, 0.45)",
+                    transition: rouletteSpinning ? "none" : "width .18s ease-out",
+                  }}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: isMobile ? 8 : 9,
+                  color: rouletteSpinning ? "#ffe8a3" : "#98a1bf",
+                  letterSpacing: 1,
+                }}
+              >
+                <span>TIEMPO</span>
+                <span>{rouletteCountdownLabel}s</span>
+              </div>
+            </div>
+            {roulettePurpose === "entry" && (
+              <div
+                style={{
+                  padding: "4px 9px",
+                  borderRadius: 999,
+                  background: "#2B6B591C",
+                  border: "1px solid #2B6B5960",
+                  color: "#9ed4c1",
+                  fontSize: isMobile ? 8 : 9,
+                  fontWeight: 700,
+                  letterSpacing: 1,
+                }}
+              >
+                SOLO ENTRA SI SALE 👻
+              </div>
+            )}
+            <RouletteWheel
+              sections={rouletteSections}
+              angle={rouletteAngle}
+              size={rouletteWheelSize}
+              spinning={rouletteSpinning}
+              result={rouletteResult}
+            />
+            <div
+              style={{
+                minHeight: isMobile ? 24 : 28,
+                textAlign: "center",
+                fontSize: isMobile ? 9 : 13,
+                fontWeight: 900,
+                letterSpacing: isMobile ? 1.2 : 2,
+                color: rouletteSpinning ? "#FFE27A" : rouletteResult === 0 ? "#f0d8d4" : "#dbe4f8",
+                lineHeight: 1.25,
+                maxWidth: rouletteWheelSize + 24,
+              }}
+            >
+              {rouletteSpinning
+                ? isMobile
+                  ? "TOCÁ PARA FRENAR"
+                  : "TOCÁ O APRETÁ ESPACIO PARA FRENAR"
+                : rouletteResult !== null
+                  ? roulettePurpose === "battle"
+                    ? rouletteResult === 0
+                      ? "NO LO MATÓ"
+                      : "ATAQUE EXITOSO"
+                    : rouletteResult === 0
+                      ? "NADA"
+                      : `SACASTE ${rouletteResult}`
+                  : ""}
+            </div>
+            {roulettePurpose === "number" && (consecutiveSixes[cur] || 0) > 0 && (
+              <div style={{ fontSize: isMobile ? 8 : 9, color: "#d8a96a", letterSpacing: 1.2 }}>
+                RACHA DE 6: {consecutiveSixes[cur]}/3
+              </div>
+            )}
+          </div>
         </div>
       )}
+
     </div>
   );
 }

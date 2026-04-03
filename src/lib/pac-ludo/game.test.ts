@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildMoveSegments, getTokenFacing, PATH } from "./board";
 import { ALL_CHARACTERS, CHARACTER_SETS, DEFAULT_CHARACTER_IDS } from "./characters";
-import { allInBase, createTokens, executeMove, getRouletteConfig, resolveRouletteAngle } from "./game";
+import { allInBase, createTokens, executeMove, getCombatRouletteConfig, getRouletteConfig, resolveCombat, resolveRouletteAngle, resolveRouletteSelection } from "./game";
 import {
   buildRuntimePlayers,
   createDefaultSetupSlots,
@@ -148,6 +148,19 @@ describe("pac-ludo movement and facing", () => {
     expect(result.tokens[1][0]?.pathIdx).toBe(-1);
     expect(result.tokens[1][0]?.facing).toBe("down");
   });
+
+  it("can leave rivals contested on a square when auto-capture is disabled", () => {
+    const tokens = createTokens(2);
+    tokens[0][0] = { ...tokens[0][0], state: "path", pathIdx: 1, homeIdx: -1 };
+    tokens[1][0] = { ...tokens[1][0], state: "path", pathIdx: 2, homeIdx: -1 };
+
+    const result = executeMove(tokens, 0, tokens[0][0].id, 1, 2, { autoCapture: false });
+
+    expect(result.captured).toBe(false);
+    expect(result.contestedTokenIds).toEqual([tokens[1][0].id]);
+    expect(result.tokens[0][0]?.pathIdx).toBe(2);
+    expect(result.tokens[1][0]?.pathIdx).toBe(2);
+  });
 });
 
 describe("pac-ludo roulette helpers", () => {
@@ -161,11 +174,16 @@ describe("pac-ludo roulette helpers", () => {
   it("uses the softer hardcore weights and ghost-entry odds", () => {
     const hardcore = getRouletteConfig("hardcore", false);
     const baseOnly = getRouletteConfig("hardcore", true);
+    const combat = getCombatRouletteConfig("hardcore");
 
     expect(hardcore.map((section) => section.weight)).toEqual([1, 2, 3, 5, 8, 12]);
     expect(baseOnly).toEqual([
-      { value: 6, label: "👻", weight: 15, color: "#00FF88" },
-      { value: 0, label: "✕", weight: 85, color: "#330011" },
+      { value: 1, label: "👻", weight: 15, color: "#2B6B59" },
+      { value: 0, label: "", weight: 85, color: "#5B2431" },
+    ]);
+    expect(combat).toEqual([
+      { value: 1, label: "🔪", weight: 15, color: "#2B6B59" },
+      { value: 0, label: "", weight: 85, color: "#5B2431" },
     ]);
   });
 
@@ -174,6 +192,26 @@ describe("pac-ludo roulette helpers", () => {
 
     expect(resolveRouletteAngle(0, sections)).toBe(6);
     expect(resolveRouletteAngle(160, sections)).toBe(2);
+  });
+
+  it("snaps the wheel so the resolved slice ends under the pointer", () => {
+    const sections = getRouletteConfig("hardcore", false);
+    const selection = resolveRouletteSelection(160, sections);
+
+    expect(selection.value).toBe(2);
+    expect(resolveRouletteAngle(selection.snappedAngle, sections)).toBe(2);
+  });
+
+  it("resolves combat captures only after a successful attack roulette", () => {
+    const tokens = createTokens(2);
+    tokens[0][0] = { ...tokens[0][0], state: "path", pathIdx: 2, homeIdx: -1 };
+    tokens[1][0] = { ...tokens[1][0], state: "path", pathIdx: 2, homeIdx: -1 };
+
+    const resolved = resolveCombat(tokens, [tokens[1][0].id]);
+
+    expect(resolved[0][0]?.pathIdx).toBe(2);
+    expect(resolved[1][0]?.state).toBe("base");
+    expect(resolved[1][0]?.pathIdx).toBe(-1);
   });
 });
 

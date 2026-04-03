@@ -90,6 +90,7 @@ export interface ExecuteMoveResult {
   tokens: TokenMap;
   captured: boolean;
   capturedTokenIds: string[];
+  contestedTokenIds: string[];
   finished: boolean;
   segments: MoveSegment[];
 }
