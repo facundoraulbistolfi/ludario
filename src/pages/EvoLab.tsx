@@ -7,6 +7,7 @@ import Inspector from './evo-lab/Inspector'
 import FitnessChart from './evo-lab/FitnessChart'
 import MazePopulationView from './evo-lab/MazePopulationView'
 import MazeInspectorDetails from './evo-lab/MazeInspectorDetails'
+import MazeAnimationView from './evo-lab/MazeAnimationView'
 import { PRESETS } from '../lib/genetic-lab/presets'
 import { computeMetrics } from '../lib/genetic-lab/metrics'
 import { computeMazePopulationStats } from '../lib/genetic-lab/maze-runner'
@@ -14,9 +15,10 @@ import type { ExperimentConfig, PopulationSnapshot, MetricsTick, Genome } from '
 import type { GeneticLabWorkerRequest, GeneticLabWorkerMessage } from '../lib/genetic-lab-worker-types'
 import type { MazePreset } from '../lib/genetic-lab/maze-runner-types'
 
-const TABS = [
+const TABS_BASE = [
   { value: 'experiment', label: 'Experimento', shortLabel: 'Config' },
   { value: 'evolution', label: 'Evolución', shortLabel: 'Evo' },
+  { value: 'animation', label: 'Animación', shortLabel: 'Anim' },
   { value: 'metrics', label: 'Métricas', shortLabel: 'Stats' },
 ]
 
@@ -36,6 +38,11 @@ export default function EvoLab() {
   const runTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isMaze = config.problemId === 'maze-runner'
+
+  // Only show animation tab for maze problems
+  const TABS = isMaze
+    ? TABS_BASE
+    : TABS_BASE.filter(t => t.value !== 'animation')
 
   useEffect(() => {
     const worker = new Worker(
@@ -209,6 +216,22 @@ export default function EvoLab() {
             )
           ) : (
             <LabPanel title="Evolución" subtitle="Inicializa un experimento desde la tab Experimento o presiona Inicializar abajo.">
+              <p style={{ color: '#888', fontSize: '0.9rem' }}>Usa el botón Inicializar en la barra inferior.</p>
+            </LabPanel>
+          )}
+        </>
+      )}
+
+      {tab === 'animation' && isMaze && (
+        <>
+          {snapshot && mazeCtx ? (
+            <MazeAnimationView
+              individuals={snapshot.individuals}
+              maze={mazeCtx}
+              generation={snapshot.generation}
+            />
+          ) : (
+            <LabPanel title="Animación" subtitle="Inicializá un experimento para ver la animación.">
               <p style={{ color: '#888', fontSize: '0.9rem' }}>Usa el botón Inicializar en la barra inferior.</p>
             </LabPanel>
           )}
