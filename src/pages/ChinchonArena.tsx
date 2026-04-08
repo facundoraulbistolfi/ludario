@@ -7,7 +7,6 @@ import {
   findAllMelds, findBestMelds,
   checkChinchon,
   legalDiscardIndex, cutScore,
-  shouldDrawDiscard,
 } from "../lib/chinchon-bot-game";
 import {
   MIN_SIMULATIONS_BEFORE_STABLE_STOP,
@@ -28,6 +27,22 @@ import {
 import { generateReplayPair } from "../lib/chinchon-arena-sim";
 import { LabAccordionSection, LabPanel, LabTabBar, StickyActionBar } from "./chinchon-lab/Layout";
 import ChinchonLabWorker from "../workers/chinchon-lab.worker?worker";
+import {
+  CUSTOM_EMOJIS as LIB_CUSTOM_EMOJIS,
+  CUSTOM_COLORS as LIB_CUSTOM_COLORS,
+  MAX_CUSTOM_BOTS as LIB_MAX_CUSTOM_BOTS,
+  BUILTIN_BOT_CONFIGS as LIB_BUILTIN_BOT_CONFIGS,
+  defaultScoreRules,
+  createDefaultCustomConfig,
+  buildBotFromConfig as libBuildBot,
+  buildCustomBot as libBuildCustomBot,
+  generateDesc as libGenerateDesc,
+  sanitizeImportConfig as libSanitizeImport,
+  loadCustomConfigs as libLoadCustomConfigs,
+  saveCustomConfigs as libSaveCustomConfigs,
+  isV1Config,
+  migrateV1toV2,
+} from "../lib/chinchon-bot-presets";
 
 const LAB_TABS = [
   { value: "sim", label: "🧪 Simulación", shortLabel: "🧪 Sim" },
@@ -48,6 +63,18 @@ const SUIT_COLOR = ["#60a5fa", "#22c55e", "#f87171", "#fbbf24"];
 const RANK_LABEL = { 0: "🃏", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "11", 12: "12" };
 const DRAW_MODE_LABELS = { always_deck: "Solo mazo", smart: "Robo inteligente", aggressive: "Robo agresivo" };
 const DISCARD_MODE_LABELS = { default: "Descarta por valor", high_rank: "Descarta por rango", optimal: "Descarta óptimo" };
+// v2 draw style labels
+function getDrawStyleLabel(cfg) {
+  if (cfg.draw.infoAversion >= 8) return "Solo mazo";
+  if (cfg.draw.improvementThreshold <= 1) return "Robo agresivo";
+  return "Robo selectivo";
+}
+function getDiscardStyleLabel(cfg) {
+  if (cfg.discard.evalScope === "full") return "Desc. exhaustivo";
+  if (cfg.discard.rankBias >= 5) return "Desc. por rango";
+  if (cfg.discard.potentialBias >= 6) return "Desc. constructor";
+  return "Desc. por valor";
+}
 const RULE_FACTS = [
   "50 cartas",
   "2 comodines",
@@ -152,16 +179,25 @@ const RULE_SECTIONS = [
 ];
 
 function getCutShortLabel(cfg) {
-  if (cfg.cut.pursueChinchon) return "Persigue chinchón";
-  if (cfg.cut.chinchonRunMode) return "Modo corrida";
+  if (cfg.cut.chinchonPursuit >= 4) return "Persigue chinch��n";
+  if (cfg.cut.minus10Pursuit >= 7) return "Busca -10";
   if (cfg.cut.useScoreRules) return "Corte adaptativo";
   return `Corta <= ${cfg.cut.baseResto}`;
 }
 
 function getBotStrategyPills(cfg) {
+  // v2 config (has global/draw.improvementThreshold)
+  if (cfg.global) {
+    return [
+      getDrawStyleLabel(cfg),
+      getDiscardStyleLabel(cfg),
+      getCutShortLabel(cfg),
+    ];
+  }
+  // v1 fallback
   return [
-    DRAW_MODE_LABELS[cfg.draw.mode] ?? cfg.draw.mode,
-    DISCARD_MODE_LABELS[cfg.discard.mode] ?? cfg.discard.mode,
+    DRAW_MODE_LABELS[cfg.draw?.mode] ?? "Robo",
+    DISCARD_MODE_LABELS[cfg.discard?.mode] ?? "Descarte",
     getCutShortLabel(cfg),
   ];
 }
@@ -215,238 +251,21 @@ return false;
 }
 
 /* ==============================================================
-BOTS
+BOTS — delegates to src/lib/chinchon-bot-presets.ts (v2 schema)
 ============================================================== */
-function defaultDiscard(hand8) {
-const a = findBestMelds(hand8); const inM = new Set(a.meldsCut.flat());
-let wi = -1, ws = -1;
-hand8.forEach((c, i) => { if (!isJoker(c) && !inM.has(i) && cardRest(c) > ws) { ws = cardRest(c); wi = i; } });
-return wi === -1 ? hand8.length - 1 : wi;
-}
-function taiDiscard(hand8) {
-const a = findBestMelds(hand8); const inM = new Set(a.melds.flat());
-let wi = -1, ws = -1;
-hand8.forEach((c, i) => { if (!isJoker(c) && !inM.has(i) && c.rank > ws) { ws = c.rank; wi = i; } });
-if (wi === -1) { let hi = -1, hr = -1; hand8.forEach((c, i) => { if (!isJoker(c) && c.rank > hr) { hr = c.rank; hi = i; } }); return hi; }
-return wi;
-}
+const CUSTOM_EMOJIS = LIB_CUSTOM_EMOJIS;
+const CUSTOM_COLORS = LIB_CUSTOM_COLORS;
+const MAX_CUSTOM_BOTS = LIB_MAX_CUSTOM_BOTS;
+const BUILTIN_BOT_CONFIGS = LIB_BUILTIN_BOT_CONFIGS;
+const DEFAULT_CUSTOM_CONFIG = createDefaultCustomConfig;
+const DEFAULT_SCORE_RULES = defaultScoreRules;
 
-/* -- Angry DaiBot: optimal discard - tries all 8 possible discards, picks the one
-that leaves the best 7-card hand (lowest resto, then fewest free cards) -- */
-function angryDiscard(hand8) {
-let bestIdx = 0, bestResto = 9999, bestFree = 99;
-for (let i = 0; i < hand8.length; i++) {
-if (isJoker(hand8[i])) continue;
-const test = hand8.filter((_, j) => j !== i);
-const m = findBestMelds(test);
-if (m.minFree < bestFree || (m.minFree === bestFree && m.resto < bestResto)) {
-bestIdx = i; bestResto = m.resto; bestFree = m.minFree;
-}
-}
-return bestIdx;
-}
-
-/* -- Angry DaiBot: check if close to chinchón (5+ same suit consecutive, counting jokers) -- */
-function nearChinchon(hand) {
-const jokers = hand.filter(isJoker).length;
-const bySuit = {};
-hand.forEach(c => { if (!isJoker(c)) (bySuit[c.suit] ??= []).push(RANK_ORDER[c.rank]); });
-for (const orders of Object.values(bySuit)) {
-// best consecutive run length in this suit + available jokers
-orders.sort((a, b) => a - b);
-// check spans: for each window of 7, how many are present?
-for (let start = 0; start <= 5; start++) {
-let present = 0;
-for (let p = start; p <= start + 6; p++) {
-if (orders.includes(p)) present++;
-}
-if (present + jokers >= 6) return true; // only 1-2 cards away from chinchón
-}
-}
-return false;
-}
-
-/* ==============================================================
-CUSTOM BOT SYSTEM
-============================================================== */
-// Built-in bot emojis (🤖🎀🔮🔴⚙️😈) are reserved and excluded from custom selection
-const CUSTOM_EMOJIS = [
-"🧪", "⚡", "🎲", "💎", "🦾", "🧠", "🔥", "🤡",
-"🎯", "🎭", "🚀", "💀", "👻", "🕷️", "🍀", "🌟",
-"👑", "🐉", "🦊", "🦁", "🌊", "🏆", "🌋", "🛡️",
-"🎪", "🎸", "🦈", "🦋", "🌈", "🎩", "🔱", "🌀",
-];
-const CUSTOM_COLORS = [
-{ color: "#f59e0b", text: "text-amber-400", bg: "bg-amber-950", border: "border-amber-800" },
-{ color: "#06b6d4", text: "text-cyan-400", bg: "bg-cyan-950", border: "border-cyan-800" },
-{ color: "#f97316", text: "text-orange-400", bg: "bg-orange-950", border: "border-orange-800" },
-{ color: "#14b8a6", text: "text-teal-400", bg: "bg-teal-950", border: "border-teal-800" },
-{ color: "#fb7185", text: "text-rose-400", bg: "bg-rose-950", border: "border-rose-800" },
-{ color: "#818cf8", text: "text-indigo-400", bg: "bg-indigo-950", border: "border-indigo-800" },
-{ color: "#a3e635", text: "text-lime-400", bg: "bg-lime-950", border: "border-lime-800" },
-{ color: "#c084fc", text: "text-purple-400", bg: "bg-purple-950", border: "border-purple-800" },
-];
-const MAX_CUSTOM_BOTS = 8;
-const DEFAULT_SCORE_RULES = () => [{ minScore: 0, maxResto: 5 }, { minScore: 25, maxResto: 3 }, { minScore: 50, maxResto: 2 }, { minScore: 75, maxResto: 1 }];
-const DEFAULT_CUSTOM_CONFIG = () => ({
-id: "custom-" + Date.now(),
-name: "Mi Bot",
-emoji: "🧪",
-colorIdx: 0,
-description: "",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "default" },
-cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
-});
-
-
-function buildCanCut(cut) {
-return (m7, score, hand) => {
-if (cut.pursueChinchon && nearChinchonCustom(hand, cut.chinchonThreshold ?? 6)) return m7.minFree === 0;
-if (cut.chinchonRunMode && has4RunSameSuit(hand)) return m7.minFree === 0;
-const maxR = cut.useScoreRules
-? ([...cut.scoreRules].reverse().find(r => (score ?? 0) >= r.minScore)?.maxResto ?? cut.baseResto)
-: cut.baseResto;
-return m7.minFree <= cut.maxFree && m7.resto <= Math.min(maxR, 5);
-};
-}
-
-function generateDesc(cfg) {
-const parts = [];
-const dm = { always_deck: "Solo mazo", smart: "Robo inteligente", aggressive: "Robo agresivo" };
-parts.push(dm[cfg.draw.mode] || "Robo inteligente");
-const dd = { default: "Desc. por valor", high_rank: "Desc. por rango", optimal: "Desc. óptimo" };
-parts.push(dd[cfg.discard.mode] || "Desc. por valor");
-if (cfg.cut.useScoreRules) parts.push("Corte adaptativo");
-else parts.push("Corte ≤" + cfg.cut.baseResto);
-if (cfg.cut.chinchonRunMode) parts.push("🏃corrida");
-if (cfg.cut.pursueChinchon) parts.push("🎯chinchón(" + (cfg.cut.chinchonThreshold ?? 6) + ")");
-return parts.join(" · ");
-}
-
-function buildBotFromConfig(cfg) {
-const color = cfg.color ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].color;
-const text = cfg.text ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].text;
-const bg = cfg.bg ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].bg;
-const border = cfg.border ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].border;
-return {
-id: cfg.id, name: cfg.name, emoji: cfg.emoji,
-color, text, bg, border,
-desc: generateDesc(cfg), description: cfg.description ?? "",
-custom: !cfg.color, // color field present = builtin
-drawConfig: cfg.draw,
-canCut: buildCanCut(cfg.cut),
-pickDiscard: cfg.discard.mode === "high_rank" ? taiDiscard : cfg.discard.mode === "optimal" ? angryDiscard : defaultDiscard,
-};
-}
-
-function buildCustomBot(cfg) { return buildBotFromConfig(cfg); }
-
-function sanitizeImportConfig(raw) {
-if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-if (typeof raw.name !== "string" || !raw.name.trim()) return null;
-if (!raw.draw || !raw.discard || !raw.cut) return null;
-const draw = raw.draw ?? {};
-const discard = raw.discard ?? {};
-const cut = raw.cut ?? {};
-const validDraw = ["always_deck", "smart", "aggressive"];
-const validDiscard = ["default", "high_rank", "optimal"];
-if (!validDraw.includes(draw.mode)) return null;
-if (!validDiscard.includes(discard.mode)) return null;
-return {
-id: "custom-" + Date.now(),
-name: String(raw.name).slice(0, 12).trim(),
-emoji: CUSTOM_EMOJIS.includes(String(raw.emoji)) ? String(raw.emoji) : "🧪",
-colorIdx: typeof raw.colorIdx === "number" ? Math.min(Math.max(0, Math.floor(raw.colorIdx)), CUSTOM_COLORS.length - 1) : 0,
-description: typeof raw.description === "string" ? raw.description.slice(0, 120) : "",
-draw: {
-mode: draw.mode,
-restoThreshold: typeof draw.restoThreshold === "number" ? Math.min(Math.max(1, Math.floor(draw.restoThreshold)), 10) : 3,
-},
-discard: { mode: discard.mode },
-cut: {
-maxFree: typeof cut.maxFree === "number" ? Math.min(Math.max(0, Math.floor(cut.maxFree)), 1) : 1,
-baseResto: Math.min(Math.max(0, Math.floor(cut.baseResto ?? 5)), 5),
-useScoreRules: Boolean(cut.useScoreRules),
-scoreRules: Array.isArray(cut.scoreRules)
-? DEFAULT_SCORE_RULES().map((def, i) => ({ minScore: def.minScore, maxResto: Math.min(Math.max(0, Math.floor(cut.scoreRules[i]?.maxResto ?? def.maxResto)), 5) }))
-: DEFAULT_SCORE_RULES(),
-pursueChinchon: Boolean(cut.pursueChinchon),
-chinchonThreshold: [5, 6].includes(cut.chinchonThreshold) ? cut.chinchonThreshold : 6,
-chinchonRunMode: Boolean(cut.chinchonRunMode),
-},
-};
-}
-
-function loadCustomConfigs() {
-try {
-const configs = JSON.parse(
-localStorage.getItem("chinchon-lab-custom-bots")
-?? localStorage.getItem("chinchon-arena-custom-bots")
-?? "[]"
-);
-if (!Array.isArray(configs)) return [];
-// Clamp resto values to the legal game maximum of 5
-return configs.slice(0, MAX_CUSTOM_BOTS).map(cfg => ({
-...cfg,
-cut: {
-...cfg.cut,
-baseResto: Math.min(cfg.cut?.baseResto ?? 5, 5),
-scoreRules: (cfg.cut?.scoreRules ?? []).map(r => ({ ...r, maxResto: Math.min(r.maxResto ?? 5, 5) })),
-},
-}));
-} catch { return []; }
-}
-function saveCustomConfigs(configs) {
-const safeConfigs = configs.slice(0, MAX_CUSTOM_BOTS);
-localStorage.setItem("chinchon-lab-custom-bots", JSON.stringify(safeConfigs));
-localStorage.setItem("chinchon-arena-custom-bots", JSON.stringify(safeConfigs));
-}
-
-const BUILTIN_BOT_CONFIGS = [
-{ id: "facutron", name: "FacuTron", emoji: "🤖",
-color: "#34d399", text: "text-emerald-400", bg: "bg-emerald-950", border: "border-emerald-800",
-description: "Bot equilibrado. Corta en cuanto tiene la mano razonablemente limpia, sin buscar chinchón ni esperar demasiado.",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "default" },
-cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
-},
-{ id: "daibot", name: "DaiBot", emoji: "🎀",
-color: "#f472b6", text: "text-pink-400", bg: "bg-pink-950", border: "border-pink-800",
-description: "Muy paciente. Solo corta cuando todas sus cartas están en melds, apuntando al -10 o al chinchón. Puede tardar muchas rondas.",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "default" },
-cut: { maxFree: 0, baseResto: 0, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
-},
-{ id: "candelaria", name: "Candelar-IA", emoji: "🔮",
-color: "#38bdf8", text: "text-sky-400", bg: "bg-sky-950", border: "border-sky-800",
-description: "Cambia de estrategia según el marcador: antes de los 50 puntos exige la mano perfecta, después afloja un poco y acepta hasta 3 de resto.",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "default" },
-cut: { maxFree: 1, baseResto: 3, useScoreRules: true, scoreRules: [{ minScore: 0, maxResto: 0 }, { minScore: 25, maxResto: 0 }, { minScore: 50, maxResto: 3 }, { minScore: 75, maxResto: 3 }], pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
-},
-{ id: "tai", name: "T.A.I", emoji: "🔴",
-color: "#f87171", text: "text-red-400", bg: "bg-red-950", border: "border-red-800",
-description: "Agresiva en el descarte: siempre tira la carta con número más alto. Corta apenas tiene el resto bajo, sin esperar la perfección.",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "high_rank" },
-cut: { maxFree: 1, baseResto: 3, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
-},
-{ id: "martinmatic", name: "MartinMatic", emoji: "⚙️",
-color: "#9ca3af", text: "text-gray-400", bg: "bg-gray-900", border: "border-gray-700",
-description: "Juega agresivo en general, pero si arma una corrida de 4+ cartas del mismo palo cambia de modo y espera para hacer chinchón.",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "default" },
-cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: true },
-},
-{ id: "angrydai", name: "Angry DaiBot", emoji: "😈",
-color: "#a78bfa", text: "text-violet-400", bg: "bg-violet-950", border: "border-violet-800",
-description: "La IA más compleja: descarte óptimo calculado, umbrales de corte que cambian con el puntaje y caza el chinchón cuando está cerca.",
-draw: { mode: "aggressive" },
-discard: { mode: "optimal" },
-cut: { maxFree: 1, baseResto: 2, useScoreRules: true, scoreRules: [{ minScore: 0, maxResto: 2 }, { minScore: 25, maxResto: 2 }, { minScore: 50, maxResto: 3 }, { minScore: 75, maxResto: 1 }], pursueChinchon: true, chinchonThreshold: 6, chinchonRunMode: false },
-},
-];
+function buildBotFromConfig(cfg) { return libBuildBot(cfg); }
+function buildCustomBot(cfg) { return libBuildCustomBot(cfg); }
+function generateDesc(cfg) { return libGenerateDesc(cfg); }
+function sanitizeImportConfig(raw) { return libSanitizeImport(raw); }
+function loadCustomConfigs() { return libLoadCustomConfigs(); }
+function saveCustomConfigs(configs) { return libSaveCustomConfigs(configs); }
 
 const BUILTIN_BOTS = BUILTIN_BOT_CONFIGS.map(buildBotFromConfig);
 
@@ -469,11 +288,12 @@ return { phase, deck, discardPile: [], pHand, bHand, scores: [...scores], dealer
 }
 function botTakeTurn(g, botObj) {
 const hand = [...g.bHand.map(c => ({ ...c }))], deck = [...g.deck], dp = [...g.discardPile];
+const ctx = { myScore: g.scores[1], oppScore: g.scores[0], deckRemaining: deck.length, oppKeptFromDeck: 0, oppKeptFromDiscard: 0 };
 // Initial turn: bot has 8 cards, only discards (no draw)
 if (hand.length === 8) {
-  const wi = legalDiscardIndex(hand, botObj.pickDiscard(hand)); const disc = hand.splice(wi, 1)[0]; dp.push(disc);
+  const wi = legalDiscardIndex(hand, botObj.pickDiscard(hand, ctx)); const disc = hand.splice(wi, 1)[0]; dp.push(disc);
   const m7 = findBestMelds(hand);
-  if (botObj.canCut(m7, g.scores[1], hand)) {
+  if (botObj.canCut(m7, hand, ctx)) {
     const cs = cutScore(hand); const pM = findBestMelds(g.pHand);
     return { ...g, bHand: hand, deck, discardPile: dp, phase: "roundEnd", drawnCard: null, botDiscard: disc,
       botLastAction: { drew: "initial", discarded: disc },
@@ -484,16 +304,16 @@ if (hand.length === 8) {
 const top = dp.length ? dp[dp.length - 1] : null;
 let drawDisc = false;
 if (top && deck.length) {
-if (botObj.drawConfig) { drawDisc = shouldDrawDiscard(hand, top, botObj); }
-else { const t2 = [...hand, { ...top }]; const b7 = findBestMelds(hand); const a8 = findBestMelds(t2); if (a8.minFree < b7.minFree || a8.resto < b7.resto - 3) drawDisc = true; }
+  drawDisc = botObj.shouldDraw(hand, top, ctx);
 }
 let drawn;
 if (drawDisc && dp.length) drawn = dp.pop(); else if (deck.length) drawn = deck.pop();
 else return { ...g, phase: "roundEnd", roundResult: { reason: "empty" } };
 hand.push(drawn);
-const wi = legalDiscardIndex(hand, botObj.pickDiscard(hand)); const disc = hand.splice(wi, 1)[0]; dp.push(disc);
+const ctxAfterDraw = { ...ctx, deckRemaining: deck.length };
+const wi = legalDiscardIndex(hand, botObj.pickDiscard(hand, ctxAfterDraw)); const disc = hand.splice(wi, 1)[0]; dp.push(disc);
 const m7 = findBestMelds(hand);
-if (botObj.canCut(m7, g.scores[1], hand)) {
+if (botObj.canCut(m7, hand, ctxAfterDraw)) {
 const cs = cutScore(hand); const pM = findBestMelds(g.pHand);
 return { ...g, bHand: hand, deck, discardPile: dp, phase: "roundEnd", drawnCard: drawn, botDiscard: disc,
 botLastAction: { drew: drawDisc ? "discard" : "deck", discarded: disc },
@@ -902,33 +722,74 @@ stroke={v === 50 ? "#4b5563" : "#1f2937"} strokeWidth={v === 50 ? 1 : 0.5} strok
 
 /* -- Prompt helpers -- */
 function botConfigToPromptText(cfg) {
+// v2 config
+if (cfg.global) {
+  const drawParts = [
+    `umbral mejora=${cfg.draw.improvementThreshold}`,
+    `estructura=${cfg.draw.structuralPriority}`,
+    cfg.draw.infoAversion > 0 ? `aversión info=${cfg.draw.infoAversion}` : null,
+    cfg.draw.chinchonBias > 0 ? `sesgo chinchón=${cfg.draw.chinchonBias}` : null,
+    `tempo=${cfg.draw.tempoPreference}`,
+  ].filter(Boolean).join(", ");
+
+  const discParts = [
+    `alcance=${cfg.discard.evalScope}`,
+    `resto=${cfg.discard.restoBias}`,
+    `potencial=${cfg.discard.potentialBias}`,
+    cfg.discard.rankBias > 0 ? `rango=${cfg.discard.rankBias} [debug]` : null,
+    `protección comodín=${cfg.discard.jokerProtection}`,
+  ].filter(Boolean).join(", ");
+
+  let cutDesc;
+  if (cfg.cut.useScoreRules && cfg.cut.scoreRules) {
+    const rules = cfg.cut.scoreRules.map(r => `${r.minScore}+ pts → ≤${r.maxResto}`).join(", ");
+    cutDesc = `adaptativo [${rules}], máx ${cfg.cut.maxFree} suelta`;
+  } else {
+    cutDesc = `resto ≤ ${cfg.cut.baseResto}, máx ${cfg.cut.maxFree} suelta`;
+  }
+  const cutExtras = [
+    cfg.cut.chinchonPursuit > 0 ? `chinchón=${cfg.cut.chinchonPursuit} (umbral ${cfg.cut.chinchonThreshold})` : null,
+    cfg.cut.minus10Pursuit > 0 ? `−10=${cfg.cut.minus10Pursuit}` : null,
+    `urgencia mazo=${cfg.cut.deckUrgency}`,
+    `protección ventaja=${cfg.cut.leadProtection}`,
+    `desesperación=${cfg.cut.desperationMode}`,
+  ].filter(Boolean).join(", ");
+
+  return [
+    `${cfg.emoji} ${cfg.name}`,
+    cfg.description ? `"${cfg.description}"` : null,
+    `  Personalidad: temp=${cfg.global.temperature}${cfg.global.mistakeRate > 0 ? `, errores=${cfg.global.mistakeRate} [debug]` : ""}`,
+    `  Robo: ${drawParts}`,
+    `  Descarte: ${discParts}`,
+    `  Corte: ${cutDesc}`,
+    cutExtras ? `  Lectura: ${cutExtras}` : null,
+  ].filter(Boolean).join("\n");
+}
+
+// v1 fallback
 const drawDescs = {
-always_deck: "solo roba del mazo (nunca del descarte)",
-smart: `roba del descarte si reduce el resto en más de ${cfg.draw?.restoThreshold ?? 3} pts`,
-aggressive: "roba del descarte ante cualquier mejora de resto",
+  always_deck: "solo roba del mazo (nunca del descarte)",
+  smart: `roba del descarte si reduce el resto en más de ${cfg.draw?.restoThreshold ?? 3} pts`,
+  aggressive: "roba del descarte ante cualquier mejora de resto",
 };
 const discardDescs = {
-default: "descarta la carta suelta de mayor valor en puntos",
-high_rank: "descarta siempre la carta con número más alto",
-optimal: "evalúa las 8 opciones de descarte y elige la que deja la mejor mano",
+  default: "descarta la carta suelta de mayor valor en puntos",
+  high_rank: "descarta siempre la carta con número más alto",
+  optimal: "evalúa las 8 opciones de descarte y elige la que deja la mejor mano",
 };
 let cutDesc;
 if (cfg.cut?.useScoreRules && cfg.cut?.scoreRules) {
-const rules = cfg.cut.scoreRules.map(r => `${r.minScore}+ pts → resto ≤ ${r.maxResto}`).join(", ");
-cutDesc = `corte adaptativo por puntaje [${rules}], máx ${cfg.cut.maxFree ?? 1} carta suelta`;
+  const rules = cfg.cut.scoreRules.map(r => `${r.minScore}+ pts → resto ≤ ${r.maxResto}`).join(", ");
+  cutDesc = `corte adaptativo por puntaje [${rules}], máx ${cfg.cut.maxFree ?? 1} carta suelta`;
 } else {
-cutDesc = `corta con resto ≤ ${cfg.cut?.baseResto ?? 5} pts, máx ${cfg.cut?.maxFree ?? 1} carta suelta`;
+  cutDesc = `corta con resto ≤ ${cfg.cut?.baseResto ?? 5} pts, máx ${cfg.cut?.maxFree ?? 1} carta suelta`;
 }
-const extras = [];
-if (cfg.cut?.pursueChinchon) extras.push(`persigue chinchón desde ${cfg.cut.chinchonThreshold ?? 6} cartas en posición`);
-if (cfg.cut?.chinchonRunMode) extras.push("con corrida de 4+ cartas del mismo palo, espera el chinchón");
 return [
-`${cfg.emoji} ${cfg.name}`,
-cfg.description ? `"${cfg.description}"` : null,
-`  Robo: ${drawDescs[cfg.draw?.mode] ?? cfg.draw?.mode}`,
-`  Descarte: ${discardDescs[cfg.discard?.mode] ?? cfg.discard?.mode}`,
-`  Corte: ${cutDesc}`,
-extras.length ? `  Especial: ${extras.join("; ")}` : null,
+  `${cfg.emoji} ${cfg.name} [v1 legacy]`,
+  cfg.description ? `"${cfg.description}"` : null,
+  `  Robo: ${drawDescs[cfg.draw?.mode] ?? cfg.draw?.mode}`,
+  `  Descarte: ${discardDescs[cfg.discard?.mode] ?? cfg.discard?.mode}`,
+  `  Corte: ${cutDesc}`,
 ].filter(Boolean).join("\n");
 }
 
@@ -972,32 +833,40 @@ const schema = `{
   "emoji": string,        // UNO de: 🧪 ⚡ 🎲 💎 🦾 🧠 🔥 🤡 🎯 🎭 🚀 💀 👻 🕷️ 🍀 🌟 👑 🐉 🦊 🦁 🌊 🏆 🌋 🛡️ 🎪 🎸 🦈 🦋 🌈 🎩 🔱 🌀
   "colorIdx": number,     // entero 0–7
   "description": string,  // hasta 120 caracteres, descripción de la estrategia
+  "global": {
+    "temperature": number,  // 0–10; ruido gaussiano en evaluaciones. 0 = determinista
+    "mistakeRate": number   // 0–10; probabilidad de invertir decisiones al azar (debug)
+  },
   "draw": {
-    "mode": "always_deck" | "smart" | "aggressive",
-    //   always_deck → nunca roba del descarte
-    //   smart       → roba del descarte solo si reduce el resto en más de restoThreshold puntos
-    //   aggressive  → roba del descarte ante cualquier mejora de resto
-    "restoThreshold": number  // 1–10; solo relevante si mode = "smart"
+    "improvementThreshold": number,  // 0–10; cuánta mejora de resto exige para tomar del descarte. Alto = conservador
+    "structuralPriority": number,    // 0–10; valora pares/conectores además de resto al decidir robo
+    "infoAversion": number,          // 0–10; evita tomar del descarte para no revelar info. 10 = solo mazo
+    "chinchonBias": number,          // 0–10; bonus por cartas que acercan al chinchón
+    "tempoPreference": number        // 0–10; alto = prefiere mejorar rápido, bajo = juega lento
   },
   "discard": {
-    "mode": "default" | "high_rank" | "optimal"
-    //   default    → descarta la carta suelta con mayor valor en puntos
-    //   high_rank  → descarta la carta con número más alto, incluso si está en meld parcial
-    //   optimal    → evalúa los 8 posibles descartes y elige el que deja la mejor mano (más inteligente)
+    "evalScope": "fast" | "full",    // fast = carta suelta de mayor peso; full = prueba las 8 y elige la mejor
+    "restoBias": number,             // 0–10; prioriza descartar la que más reduce el resto
+    "potentialBias": number,         // 0–10; protege cartas con potencial de meld
+    "rankBias": number,              // 0–10; suelta cartas de rango alto sin importar melds (debug)
+    "jokerProtection": number        // 0–10; evita dejar comodines sin meld
   },
   "cut": {
     "maxFree": 0 | 1,         // 0 = solo corta sin cartas sueltas; 1 = tolera hasta 1 carta suelta
     "baseResto": number,       // 0–5; umbral de resto máximo para cortar (si useScoreRules = false)
     "useScoreRules": boolean,  // true = usa scoreRules en lugar de baseResto
-    "scoreRules": [            // exactamente 4 entradas fijas, una por rango de puntaje propio
+    "scoreRules": [            // exactamente 4 entradas, una por rango de puntaje propio
       { "minScore": 0,  "maxResto": number },   // cuando tengo 0–24 puntos
       { "minScore": 25, "maxResto": number },   // cuando tengo 25–49 puntos
       { "minScore": 50, "maxResto": number },   // cuando tengo 50–74 puntos
-      { "minScore": 75, "maxResto": number }    // cuando tengo 75+ puntos (cerca del límite)
+      { "minScore": 75, "maxResto": number }    // cuando tengo 75+ puntos
     ],
-    "pursueChinchon": boolean,     // true = cuando está cerca del chinchón, solo corta con mano perfecta
-    "chinchonThreshold": 5 | 6,    // 6 = le faltan 1–2 cartas; 5 = activa antes (más ambicioso)
-    "chinchonRunMode": boolean      // true = con corrida de 4+ cartas del mismo palo, espera el chinchón
+    "chinchonPursuit": number,     // 0–10; cuánto pesa esperar al chinchón. 0 = nunca, 10 = siempre
+    "chinchonThreshold": 4 | 5 | 6, // cartas en posición necesarias para activar la persecución
+    "minus10Pursuit": number,      // 0–10; cuánto pesa esperar al −10. 0 = corta cuando puede
+    "deckUrgency": number,         // 0–10; apura corte cuando quedan pocas cartas en el mazo
+    "leadProtection": number,      // 0–10; sube umbral de corte si va ganando
+    "desperationMode": number      // 0–10; baja umbral si va perdiendo por mucho
   }
 }`;
 
@@ -1005,9 +874,10 @@ const example = `{
   "name": "EjemploBot",
   "emoji": "🧠",
   "colorIdx": 1,
-  "description": "Equilibrado: roba del descarte cuando conviene y ajusta el umbral de corte según el marcador.",
-  "draw": { "mode": "smart", "restoThreshold": 3 },
-  "discard": { "mode": "default" },
+  "description": "Equilibrado: toma del descarte con mejora moderada, corte adaptativo por marcador.",
+  "global": { "temperature": 2, "mistakeRate": 0 },
+  "draw": { "improvementThreshold": 3, "structuralPriority": 5, "infoAversion": 0, "chinchonBias": 0, "tempoPreference": 5 },
+  "discard": { "evalScope": "fast", "restoBias": 8, "potentialBias": 3, "rankBias": 0, "jokerProtection": 5 },
   "cut": {
     "maxFree": 1,
     "baseResto": 4,
@@ -1018,9 +888,12 @@ const example = `{
       { "minScore": 50, "maxResto": 2 },
       { "minScore": 75, "maxResto": 1 }
     ],
-    "pursueChinchon": false,
+    "chinchonPursuit": 0,
     "chinchonThreshold": 6,
-    "chinchonRunMode": false
+    "minus10Pursuit": 0,
+    "deckUrgency": 3,
+    "leadProtection": 3,
+    "desperationMode": 2
   }
 }`;
 
@@ -1170,70 +1043,107 @@ style={{ background: cc.color, borderColor: cfg.colorIdx === i ? "#fff" : cc.col
 </div>
 </LabAccordionSection>
 
-{/* Draw */}
-<LabAccordionSection title="Robo" subtitle="Como elige entre mazo y descarte" defaultOpen>
+{/* Personalidad global */}
+<LabAccordionSection title="Personalidad" subtitle="Ruido y aleatoriedad global" defaultOpen={false}>
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
-<div className="text-xs font-bold mb-1" style={{ color: c.color }}>🃏 Estrategia de robo</div>
-<p className="text-xs text-gray-500 mb-2 leading-snug">¿Cuándo toma cartas del pozo de descarte en lugar del mazo?</p>
-<div className="flex flex-col gap-2">
-{([
-["always_deck", "Solo del mazo", "Nunca toma del descarte. Predecible, no revela qué cartas le sirven."],
-["smart", "Inteligente (umbral)", "Toma del descarte solo si reduce el resto más que el umbral configurado. Balanceado."],
-["aggressive", "Agresivo", "Toma del descarte ante cualquier mejora de resto. Reactivo y oportunista."],
-] as [string, string, string][]).map(([m, title, desc]) => (
-<label key={m} className="flex items-start gap-2 cursor-pointer">
-<input type="radio" name="draw" checked={cfg.draw.mode === m} onChange={() => upd("draw.mode", m)}
-className="accent-amber-500 mt-0.5 shrink-0" />
+<div className="text-xs font-bold mb-1" style={{ color: c.color }}>🎲 Personalidad del bot</div>
+<p className="text-xs text-gray-500 mb-3 leading-snug">Parámetros globales que afectan todas las decisiones. Subir estos valores hace al bot más impredecible.</p>
+
+<div className="mb-4">
+<div className="flex items-center justify-between mb-0.5">
+<span className="text-xs font-medium text-gray-300">Temperatura</span>
+<span className="text-xs font-mono text-amber-400">{cfg.global.temperature}</span>
+</div>
+<p className="text-xs text-gray-500 mb-1.5 leading-snug">Agrega ruido gaussiano a todas las evaluaciones numéricas. 0 = determinista, 10 = muy caótico.</p>
+<input type="range" min={0} max={10} value={cfg.global.temperature} onChange={e => upd("global.temperature", +e.target.value)} className="w-full accent-amber-500" />
+</div>
+
 <div>
-<span className={`text-sm ${cfg.draw.mode === m ? "text-gray-100 font-medium" : "text-gray-300"}`}>{title}</span>
-<p className="text-xs text-gray-500 leading-snug">{desc}</p>
+<div className="flex items-center justify-between mb-0.5">
+<span className="text-xs font-medium text-gray-300">
+<span className="lab-debug-badge" title="Este parámetro hace al bot peor a propósito. Útil para testing.">🧪 Debug</span>
+{" "}Tasa de error
+</span>
+<span className="text-xs font-mono text-amber-400">{cfg.global.mistakeRate}</span>
 </div>
-</label>
+<p className="text-xs text-gray-500 mb-1.5 leading-snug">Probabilidad de invertir una decisión al azar. 0 = nunca se equivoca, 10 = invierte el 100% de las veces. Para testing.</p>
+<input type="range" min={0} max={10} value={cfg.global.mistakeRate} onChange={e => upd("global.mistakeRate", +e.target.value)} className="w-full accent-amber-500" />
+{cfg.global.mistakeRate > 0 && <p className="text-xs text-yellow-500/70 mt-1 leading-snug">⚠️ Con tasa de error &gt; 0 el bot tomará decisiones incorrectas a propósito.</p>}
+</div>
+</div>
+</LabAccordionSection>
+
+{/* Draw */}
+<LabAccordionSection title="Robo" subtitle="Cómo elige entre mazo y descarte" defaultOpen>
+<div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
+<div className="text-xs font-bold mb-1" style={{ color: c.color }}>🃏 Criterios de robo</div>
+<p className="text-xs text-gray-500 mb-3 leading-snug">Pesos que determinan cuándo el bot toma del descarte vs. del mazo. Los valores más altos hacen que ese criterio pese más en la decisión.</p>
+
+{([
+["draw.improvementThreshold", "Umbral de mejora", "Cuánta mejora de resto exige para tomar del descarte. Alto = conservador, solo toma si la mejora es grande.", cfg.draw.improvementThreshold],
+["draw.structuralPriority", "Prioridad estructural", "Valora si la carta del descarte forma pares o conectores (escaleras parciales) además de reducir el resto.", cfg.draw.structuralPriority],
+["draw.infoAversion", "Aversión a la info", "Evita tomar del descarte para no revelar al rival qué cartas le sirven. 10 = nunca toma del descarte.", cfg.draw.infoAversion],
+["draw.chinchonBias", "Sesgo chinchón", "Bonus por tomar cartas que acercan al chinchón (7 cartas consecutivas del mismo palo).", cfg.draw.chinchonBias],
+["draw.tempoPreference", "Preferencia de tempo", "Pondera el turno actual vs. avance: alto = prefiere mejorar rápido. Bajo = juega lento y cauteloso.", cfg.draw.tempoPreference],
+] as [string, string, string, number][]).map(([path, label, tip, val]) => (
+<div key={path} className="mb-3 last:mb-0">
+<div className="flex items-center justify-between mb-0.5">
+<span className="text-xs font-medium text-gray-300">{label}</span>
+<span className="text-xs font-mono text-amber-400">{val}</span>
+</div>
+<p className="text-xs text-gray-500 mb-1 leading-snug">{tip}</p>
+<input type="range" min={0} max={10} value={val} onChange={e => upd(path, +e.target.value)} className="w-full accent-amber-500" />
+</div>
 ))}
-</div>
-{cfg.draw.mode === "smart" && (
-<div className="mt-3 border border-gray-600 rounded p-2">
-<div className="flex items-center gap-2">
-<span className="text-xs text-gray-400">Umbral de resto:</span>
-<input type="range" min={1} max={10} value={cfg.draw.restoThreshold} onChange={e => upd("draw.restoThreshold", +e.target.value)}
-className="flex-1 accent-amber-500" />
-<span className="text-xs font-mono text-amber-400 w-5 text-right">{cfg.draw.restoThreshold}</span>
-</div>
-<p className="text-xs text-gray-600 mt-1 leading-snug">Toma del descarte solo si reduce el resto en más de {cfg.draw.restoThreshold} pts. Mayor = más conservador.</p>
-</div>
-)}
 </div>
 </LabAccordionSection>
 
 {/* Discard */}
-<LabAccordionSection title="Descarte" subtitle="Que carta deja ir en cada turno" defaultOpen={false}>
+<LabAccordionSection title="Descarte" subtitle="Qué carta deja ir en cada turno" defaultOpen={false}>
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
-<div className="text-xs font-bold mb-1" style={{ color: c.color }}>🗑️ Estrategia de descarte</div>
-<p className="text-xs text-gray-500 mb-2 leading-snug">¿Qué carta elimina de su mano en cada turno?</p>
-<div className="flex flex-col gap-2">
-{([
-["default", "Por valor (recomendado)", "Descarta la carta suelta con mayor valor en puntos. Minimiza el resto de forma directa."],
-["high_rank", "Por rango numérico", "Descarta la carta con número más alto aunque forme parte de un meld parcial. Más agresivo."],
-["optimal", "Óptimo (más lento)", "Evalúa las 8 posibles cartas a descartar y elige la que deja la mejor mano. Más inteligente pero más costoso computacionalmente."],
-] as [string, string, string][]).map(([m, title, desc]) => (
-<label key={m} className="flex items-start gap-2 cursor-pointer">
-<input type="radio" name="discard" checked={cfg.discard.mode === m} onChange={() => upd("discard.mode", m)}
-className="accent-amber-500 mt-0.5 shrink-0" />
-<div>
-<span className={`text-sm ${cfg.discard.mode === m ? "text-gray-100 font-medium" : "text-gray-300"}`}>{title}</span>
-<p className="text-xs text-gray-500 leading-snug">{desc}</p>
-</div>
-</label>
+<div className="text-xs font-bold mb-1" style={{ color: c.color }}>🗑️ Criterios de descarte</div>
+<p className="text-xs text-gray-500 mb-3 leading-snug">Controlan qué carta descarta el bot después de robar. Cada peso influye en la puntuación de cada carta candidata.</p>
+
+<div className="mb-4">
+<span className="text-xs font-medium text-gray-300 block mb-0.5">Alcance de evaluación</span>
+<p className="text-xs text-gray-500 mb-2 leading-snug">Fast = evalúa la carta suelta de mayor peso rápido. Full = prueba descartar cada una de las 8 cartas y elige la mejor opción (más lento).</p>
+<div className="flex gap-1">
+{(["fast", "full"] as const).map(v => (
+<button key={v} onClick={() => upd("discard.evalScope", v)}
+className={`px-3 py-1 rounded text-xs font-medium border transition-all ${cfg.discard.evalScope === v ? "border-2" : "border-gray-600 text-gray-400 hover:border-gray-500"}`}
+style={cfg.discard.evalScope === v ? { borderColor: c.color, color: c.color, background: `${c.color}15` } : {}}>
+{v === "fast" ? "Fast — rápido" : "Full — exhaustivo"}
+</button>
 ))}
 </div>
+</div>
+
+{([
+["discard.restoBias", "Peso del resto", "Prioriza descartar la carta que más reduzca el resto (suma de sueltas). Valor central de la decisión.", cfg.discard.restoBias, false],
+["discard.potentialBias", "Peso del potencial", "Protege cartas que forman pares o conectores aunque sumen mucho resto. Alto = más constructor.", cfg.discard.potentialBias, false],
+["discard.rankBias", "Peso del rango", "Prioriza soltar cartas de rango alto sin importar si forman melds. Útil para debugging.", cfg.discard.rankBias, true],
+["discard.jokerProtection", "Protección de comodín", "Evita descartar cartas que dejen un comodín expuesto (sin meld que lo use). Alto = protege comodines.", cfg.discard.jokerProtection, false],
+] as [string, string, string, number, boolean][]).map(([path, label, tip, val, isDebug]) => (
+<div key={path} className="mb-3 last:mb-0">
+<div className="flex items-center justify-between mb-0.5">
+<span className="text-xs font-medium text-gray-300">
+{isDebug && <span className="lab-debug-badge" title="Este parámetro hace al bot peor a propósito. Útil para testing.">🧪 Debug</span>}
+{isDebug ? " " : ""}{label}
+</span>
+<span className="text-xs font-mono text-amber-400">{val}</span>
+</div>
+<p className="text-xs text-gray-500 mb-1 leading-snug">{tip}</p>
+<input type="range" min={0} max={10} value={val} onChange={e => upd(path, +e.target.value)} className="w-full accent-amber-500" />
+</div>
+))}
 </div>
 </LabAccordionSection>
 
 {/* Cut */}
-<LabAccordionSection title="Corte" subtitle="Cuando decide cerrar la ronda" defaultOpen={false}>
+<LabAccordionSection title="Corte" subtitle="Cuándo decide cerrar la ronda" defaultOpen={false}>
 <div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
-<div className="text-xs font-bold mb-1" style={{ color: c.color }}>✂️ Condición de corte</div>
-<p className="text-xs text-gray-500 mb-3 leading-snug">¿Cuándo decide que su mano es suficientemente buena para cortar la ronda?</p>
+<div className="text-xs font-bold mb-1" style={{ color: c.color }}>✂️ Restricciones base</div>
+<p className="text-xs text-gray-500 mb-3 leading-snug">Condiciones mínimas que el bot exige para cortar.</p>
 
 <div className="mb-3">
 <span className="text-xs font-medium text-gray-300 block mb-0.5">Cartas sueltas máximas</span>
@@ -1255,19 +1165,17 @@ style={cfg.cut.maxFree === v ? { borderColor: c.color, color: c.color, backgroun
 <span className="text-xs font-medium text-gray-300">Resto máximo para cortar</span>
 <span className="text-xs font-mono text-amber-400">{cfg.cut.baseResto} pts</span>
 </div>
-<p className="text-xs text-gray-500 mb-1.5 leading-snug">Suma máxima de las cartas sueltas para decidir cortar. El reglamento limita el corte a resto ≤ 5. 0 = solo corta sin puntos sueltos.</p>
-<input type="range" min={0} max={5} value={cfg.cut.baseResto} onChange={e => upd("cut.baseResto", +e.target.value)}
-className="w-full accent-amber-500" />
+<p className="text-xs text-gray-500 mb-1.5 leading-snug">Suma máxima de las cartas sueltas para decidir cortar. 0 = solo corta sin puntos sueltos.</p>
+<input type="range" min={0} max={5} value={cfg.cut.baseResto} onChange={e => upd("cut.baseResto", +e.target.value)} className="w-full accent-amber-500" />
 </div>
 )}
 
 <div className="border-t border-gray-700 pt-3 mb-3">
 <label className="flex items-start gap-2 cursor-pointer">
-<input type="checkbox" checked={cfg.cut.useScoreRules} onChange={e => upd("cut.useScoreRules", e.target.checked)}
-className="accent-amber-500 mt-0.5 shrink-0" />
+<input type="checkbox" checked={cfg.cut.useScoreRules} onChange={e => upd("cut.useScoreRules", e.target.checked)} className="accent-amber-500 mt-0.5 shrink-0" />
 <div>
 <span className={`text-sm ${cfg.cut.useScoreRules ? "text-gray-100 font-medium" : "text-gray-300"}`}>Corte adaptativo por puntaje</span>
-<p className="text-xs text-gray-500 leading-snug">Cambia el umbral de resto según los puntos acumulados. Permite estrategias más conservadoras cuando va ganando o más agresivas cuando pierde terreno.</p>
+<p className="text-xs text-gray-500 leading-snug">Cambia el umbral de resto según los puntos acumulados.</p>
 </div>
 </label>
 {cfg.cut.useScoreRules && (
@@ -1276,52 +1184,72 @@ className="accent-amber-500 mt-0.5 shrink-0" />
 <div key={i} className="flex items-center gap-2">
 <span className="text-xs text-gray-500 w-20 shrink-0">{r.minScore === 0 ? "0–24 pts" : r.minScore === 25 ? "25–49 pts" : r.minScore === 50 ? "50–74 pts" : "75+ pts"}:</span>
 <span className="text-xs text-gray-400 shrink-0">resto ≤</span>
-<input type="range" min={0} max={5} value={r.maxResto} onChange={e => updRule(i, +e.target.value)}
-className="flex-1 accent-amber-500" />
+<input type="range" min={0} max={5} value={r.maxResto} onChange={e => updRule(i, +e.target.value)} className="flex-1 accent-amber-500" />
 <span className="text-xs font-mono text-amber-400 w-5 text-right">{r.maxResto}</span>
 </div>
 ))}
 </div>
 )}
 </div>
-
-<div className="border-t border-gray-700 pt-3 flex flex-col gap-3">
-<label className="flex items-start gap-2 cursor-pointer">
-<input type="checkbox" checked={cfg.cut.pursueChinchon} onChange={e => upd("cut.pursueChinchon", e.target.checked)}
-className="accent-amber-500 mt-0.5 shrink-0" />
-<div>
-<span className={`text-sm ${cfg.cut.pursueChinchon ? "text-gray-100 font-medium" : "text-gray-300"}`}>🎯 Perseguir chinchón</span>
-<p className="text-xs text-gray-500 leading-snug">Si detecta que está cerca del chinchón, espera y solo corta con todas las cartas en melds (resto 0). Alto riesgo, alta recompensa.</p>
 </div>
-</label>
-{cfg.cut.pursueChinchon && (
-<div className="ml-5">
-<span className="text-xs font-medium text-gray-400 block mb-1.5">¿Cuándo activar el modo chinchón?</span>
+
+<div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
+<div className="text-xs font-bold mb-1" style={{ color: c.color }}>🎯 Objetivos</div>
+<p className="text-xs text-gray-500 mb-3 leading-snug">Metas especiales que el bot persigue además de cortar lo antes posible.</p>
+
+<div className="mb-3">
+<div className="flex items-center justify-between mb-0.5">
+<span className="text-xs font-medium text-gray-300">Persecución de chinchón</span>
+<span className="text-xs font-mono text-amber-400">{cfg.cut.chinchonPursuit}</span>
+</div>
+<p className="text-xs text-gray-500 mb-1 leading-snug">Cuánto pesa el deseo de esperar al chinchón (−25 pts). 0 = nunca espera, 10 = siempre espera si está cerca.</p>
+<input type="range" min={0} max={10} value={cfg.cut.chinchonPursuit} onChange={e => upd("cut.chinchonPursuit", +e.target.value)} className="w-full accent-amber-500" />
+</div>
+
+{cfg.cut.chinchonPursuit > 0 && (
+<div className="mb-3 ml-3 border-l-2 border-gray-700 pl-3">
+<span className="text-xs font-medium text-gray-400 block mb-1.5">Umbral de chinchón</span>
+<p className="text-xs text-gray-500 mb-2 leading-snug">Cuántas cartas en posición necesita para activar la persecución.</p>
 <div className="flex gap-1.5">
-{([5, 6] as number[]).map(v => (
+{([4, 5, 6] as const).map(v => (
 <button key={v} onClick={() => upd("cut.chinchonThreshold", v)}
-className={`px-3 py-1.5 rounded text-xs font-medium border transition-all ${(cfg.cut.chinchonThreshold ?? 6) === v ? "border-2" : "border-gray-600 text-gray-400 hover:border-gray-500"}`}
-style={(cfg.cut.chinchonThreshold ?? 6) === v ? { borderColor: c.color, color: c.color, background: `${c.color}15` } : {}}>
-{v === 6 ? "6 cartas — estricto" : "5 cartas — ambicioso"}
+className={`px-3 py-1.5 rounded text-xs font-medium border transition-all ${cfg.cut.chinchonThreshold === v ? "border-2" : "border-gray-600 text-gray-400 hover:border-gray-500"}`}
+style={cfg.cut.chinchonThreshold === v ? { borderColor: c.color, color: c.color, background: `${c.color}15` } : {}}>
+{v === 4 ? "4 — muy ambicioso" : v === 5 ? "5 — ambicioso" : "6 — estricto"}
 </button>
 ))}
 </div>
-<p className="text-xs text-gray-600 mt-1.5 leading-snug">
-{(cfg.cut.chinchonThreshold ?? 6) === 6
-? "Persigue el chinchón solo cuando le faltan 1–2 cartas para completarlo."
-: "Comienza a perseguir el chinchón antes, incluso cuando le faltan 2–3 cartas."}
-</p>
 </div>
 )}
-<label className="flex items-start gap-2 cursor-pointer">
-<input type="checkbox" checked={cfg.cut.chinchonRunMode ?? false} onChange={e => upd("cut.chinchonRunMode", e.target.checked)}
-className="accent-amber-500 mt-0.5 shrink-0" />
+
 <div>
-<span className={`text-sm ${cfg.cut.chinchonRunMode ? "text-gray-100 font-medium" : "text-gray-300"}`}>🏃 Modo corrida</span>
-<p className="text-xs text-gray-500 leading-snug">Si tiene 4 o más cartas del mismo palo consecutivas, espera para hacer chinchón (solo corta con todas en melds). Independiente del umbral de corte normal.</p>
+<div className="flex items-center justify-between mb-0.5">
+<span className="text-xs font-medium text-gray-300">Persecución de −10</span>
+<span className="text-xs font-mono text-amber-400">{cfg.cut.minus10Pursuit}</span>
 </div>
-</label>
+<p className="text-xs text-gray-500 mb-1 leading-snug">Cuánto pesa el deseo de cortar con resto 0 (−10 pts) en vez de cortar con resto &gt; 0. 0 = corta cuando puede, 10 = siempre espera al −10.</p>
+<input type="range" min={0} max={10} value={cfg.cut.minus10Pursuit} onChange={e => upd("cut.minus10Pursuit", +e.target.value)} className="w-full accent-amber-500" />
 </div>
+</div>
+
+<div className="mb-4 bg-gray-800 border border-gray-700 rounded-lg p-3">
+<div className="text-xs font-bold mb-1" style={{ color: c.color }}>📊 Lectura de partida</div>
+<p className="text-xs text-gray-500 mb-3 leading-snug">Cuánto influye el contexto de la partida en las decisiones de corte.</p>
+
+{([
+["cut.deckUrgency", "Urgencia por mazo", "Apura el corte cuando quedan pocas cartas en el mazo. Alto = corta más rápido cuando el mazo se acaba.", cfg.cut.deckUrgency],
+["cut.leadProtection", "Protección de ventaja", "Si va ganando, sube el umbral de corte para no regalar puntos. Alto = más conservador cuando lidera.", cfg.cut.leadProtection],
+["cut.desperationMode", "Modo desesperación", "Si va perdiendo por mucho, baja el umbral para cortar antes y evitar que el rival cierre. Alto = más agresivo al perder.", cfg.cut.desperationMode],
+] as [string, string, string, number][]).map(([path, label, tip, val]) => (
+<div key={path} className="mb-3 last:mb-0">
+<div className="flex items-center justify-between mb-0.5">
+<span className="text-xs font-medium text-gray-300">{label}</span>
+<span className="text-xs font-mono text-amber-400">{val}</span>
+</div>
+<p className="text-xs text-gray-500 mb-1 leading-snug">{tip}</p>
+<input type="range" min={0} max={10} value={val} onChange={e => upd(path, +e.target.value)} className="w-full accent-amber-500" />
+</div>
+))}
 </div>
 </LabAccordionSection>
 
@@ -1345,13 +1273,21 @@ Guardar
 }
 
 /* -- BotViewer: read-only config display -- */
+function ViewerRow({ label, value, accent = false }) {
+return (
+<div className="flex items-center justify-between py-0.5">
+<span className="text-xs text-gray-400">{label}</span>
+<span className={`text-xs font-mono ${accent ? "text-amber-400" : "text-gray-200"}`}>{value}</span>
+</div>
+);
+}
+
 function BotViewer({ config, onClose }) {
 const cfg = config;
 const { color, soft, border } = getBotPalette(cfg);
-const drawLabels = { always_deck: "Solo del mazo", smart: "Inteligente (umbral)", aggressive: "Agresivo" };
-const discardLabels = { default: "Por valor", high_rank: "Por rango numérico", optimal: "Óptimo" };
 const strategyPills = getBotStrategyPills(cfg);
 const isPreset = Boolean(cfg.color);
+const isV2 = Boolean(cfg.global);
 
 return (
 <div
@@ -1381,48 +1317,69 @@ return (
 </div>
 )}
 
+{isV2 ? (
 <div className="lab-bot-viewer__grid">
 <article className="lab-bot-viewer__card">
+<div className="text-xs font-bold mb-2" style={{ color }}>🎲 Personalidad</div>
+<ViewerRow label="Temperatura" value={cfg.global.temperature} accent />
+<ViewerRow label="Tasa de error" value={cfg.global.mistakeRate} accent />
+{cfg.global.mistakeRate > 0 && <p className="text-xs text-yellow-500/70 mt-1">⚠️ Debug activo</p>}
+</article>
+
+<article className="lab-bot-viewer__card">
 <div className="text-xs font-bold mb-2" style={{ color }}>🃏 Robo</div>
-<div className="text-sm text-gray-200 font-medium">{drawLabels[cfg.draw.mode] ?? cfg.draw.mode}</div>
-{cfg.draw.mode === "smart" && <p className="text-xs text-gray-500 mt-0.5">Umbral de resto: {cfg.draw.restoThreshold} pts</p>}
-{cfg.draw.mode === "aggressive" && <p className="text-xs text-gray-500 mt-0.5">Toma del descarte ante cualquier mejora de resto.</p>}
-{cfg.draw.mode === "always_deck" && <p className="text-xs text-gray-500 mt-0.5">Nunca toma del descarte.</p>}
+<ViewerRow label="Umbral mejora" value={cfg.draw.improvementThreshold} accent />
+<ViewerRow label="Prioridad estructural" value={cfg.draw.structuralPriority} accent />
+<ViewerRow label="Aversión info" value={cfg.draw.infoAversion} accent />
+<ViewerRow label="Sesgo chinchón" value={cfg.draw.chinchonBias} accent />
+<ViewerRow label="Tempo" value={cfg.draw.tempoPreference} accent />
 </article>
 
 <article className="lab-bot-viewer__card">
 <div className="text-xs font-bold mb-2" style={{ color }}>🗑️ Descarte</div>
-<div className="text-sm text-gray-200 font-medium">{discardLabels[cfg.discard.mode] ?? cfg.discard.mode}</div>
-<p className="text-xs text-gray-500 mt-0.5">
-{cfg.discard.mode === "default" && "Descarta la carta suelta con mayor valor en puntos."}
-{cfg.discard.mode === "high_rank" && "Descarta la carta con número más alto, sin importar melds parciales."}
-{cfg.discard.mode === "optimal" && "Evalúa las 8 posibles cartas y elige la que deja la mejor mano."}
-</p>
+<ViewerRow label="Alcance" value={cfg.discard.evalScope === "full" ? "Exhaustivo" : "Rápido"} />
+<ViewerRow label="Peso resto" value={cfg.discard.restoBias} accent />
+<ViewerRow label="Peso potencial" value={cfg.discard.potentialBias} accent />
+<ViewerRow label="Peso rango" value={cfg.discard.rankBias} accent />
+{cfg.discard.rankBias > 0 && <p className="text-xs text-yellow-500/70 mt-1">⚠️ Debug activo</p>}
+<ViewerRow label="Protección comodín" value={cfg.discard.jokerProtection} accent />
 </article>
 
 <article className="lab-bot-viewer__card is-wide">
 <div className="text-xs font-bold mb-2" style={{ color }}>✂️ Corte</div>
 <div className="flex flex-col gap-1.5 text-sm">
-<div className="text-gray-300">Cartas sueltas máx: <span className="text-gray-100 font-medium">{cfg.cut.maxFree}</span></div>
-{!cfg.cut.useScoreRules && <div className="text-gray-300">Resto máx: <span className="text-gray-100 font-medium">{cfg.cut.baseResto} pts</span></div>}
+<ViewerRow label="Sueltas máx" value={cfg.cut.maxFree} />
+{!cfg.cut.useScoreRules && <ViewerRow label="Resto máx" value={`${cfg.cut.baseResto} pts`} />}
 {cfg.cut.useScoreRules && (
 <div>
-<div className="text-xs text-gray-500 mb-1">Corte adaptativo por puntaje:</div>
+<div className="text-xs text-gray-500 mb-1">Corte adaptativo:</div>
 <div className="flex flex-col gap-0.5">
 {cfg.cut.scoreRules.map((r, i) => (
 <div key={i} className="text-xs flex gap-2">
-<span className="text-gray-500 w-20 shrink-0">{r.minScore === 0 ? "0–24 pts" : r.minScore === 25 ? "25–49 pts" : r.minScore === 50 ? "50–74 pts" : "75+ pts"}:</span>
+<span className="text-gray-500 w-20 shrink-0">{r.minScore === 0 ? "0–24" : r.minScore === 25 ? "25–49" : r.minScore === 50 ? "50–74" : "75+"} pts:</span>
 <span className="text-gray-300">resto ≤ <span className="text-gray-100 font-medium">{r.maxResto}</span></span>
 </div>
 ))}
 </div>
 </div>
 )}
-{cfg.cut.chinchonRunMode && <div className="text-gray-300">🏃 <span className="text-gray-100">Modo corrida</span> — con 4+ cartas del mismo palo consecutivas, espera el chinchón.</div>}
-{cfg.cut.pursueChinchon && <div className="text-gray-300">🎯 <span className="text-gray-100">Persigue chinchón</span> — umbral de {cfg.cut.chinchonThreshold ?? 6} cartas en posición.</div>}
+<ViewerRow label="Persecución chinchón" value={cfg.cut.chinchonPursuit} accent />
+{cfg.cut.chinchonPursuit > 0 && <ViewerRow label="Umbral chinchón" value={`${cfg.cut.chinchonThreshold} cartas`} />}
+<ViewerRow label="Persecución −10" value={cfg.cut.minus10Pursuit} accent />
+<ViewerRow label="Urgencia mazo" value={cfg.cut.deckUrgency} accent />
+<ViewerRow label="Protección ventaja" value={cfg.cut.leadProtection} accent />
+<ViewerRow label="Desesperación" value={cfg.cut.desperationMode} accent />
 </div>
 </article>
 </div>
+) : (
+<div className="lab-bot-viewer__grid">
+<article className="lab-bot-viewer__card is-wide">
+<div className="text-xs font-bold mb-2" style={{ color }}>⚠️ Config v1 (legacy)</div>
+<p className="text-xs text-gray-500">Este bot usa el formato antiguo. Editalo para migrar automáticamente a v2.</p>
+</article>
+</div>
+)}
 
 <div className="lab-bot-sheet__footer">
 <div className="lab-bot-sheet__summary">
