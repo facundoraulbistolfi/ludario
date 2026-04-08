@@ -19,7 +19,22 @@ export type RoundResult = {
   chinchon: boolean;
 };
 
+export type GameContext = {
+  myScore: number;
+  oppScore: number;
+  deckRemaining: number;
+  oppKeptFromDeck: number;
+  oppKeptFromDiscard: number;
+};
+
 export type Strategy = {
+  pickDiscard: (hand: Card[], ctx: GameContext) => number;
+  canCut: (m7: MeldResult, hand: Card[], ctx: GameContext) => boolean;
+  shouldDraw: (hand: Card[], top: Card, ctx: GameContext) => boolean;
+};
+
+/** @deprecated Use Strategy with shouldDraw instead */
+export type StrategyV1 = {
   pickDiscard: (hand: Card[]) => number;
   canCut: (m7: MeldResult, score: number, hand: Card[]) => boolean;
   drawConfig?: { mode: string; restoThreshold?: number };
@@ -164,7 +179,8 @@ export function cutScore(hand: Card[]): { score: number; chinchon: boolean } {
   return { score: m.resto, chinchon: false };
 }
 
-export function shouldDrawDiscard(hand: Card[], top: Card, botObj: Strategy): boolean {
+/** @deprecated Use Strategy.shouldDraw directly */
+export function shouldDrawDiscard(hand: Card[], top: Card, botObj: StrategyV1): boolean {
   if (!top) return false;
   const dc = botObj.drawConfig;
   if (!dc) return false;
@@ -189,23 +205,39 @@ export function playRoundScored(
   const deck = deckIn;
   const st: [Strategy, Strategy] = [strat0, strat1];
   const dr: [number, number] = [0, 0];
+  // Track kept cards by source for each player
+  const keptFromDeck: [number, number] = [0, 0];
+  const keptFromDiscard: [number, number] = [0, 0];
   const dp: Card[] = [];
+
+  function makeCtx(p: 0 | 1): GameContext {
+    const opp = (1 - p) as 0 | 1;
+    return {
+      myScore: scores[p],
+      oppScore: scores[opp],
+      deckRemaining: deck.length,
+      oppKeptFromDeck: keptFromDeck[opp],
+      oppKeptFromDiscard: keptFromDiscard[opp],
+    };
+  }
 
   // Starter (h0) gets 8 cards — deal one extra from the deck, then discard one
   if (deck.length) h[0].push(deck.pop()!);
   {
-    const wi = legalDiscardIndex(h[0], st[0].pickDiscard(h[0]));
+    const ctx0 = makeCtx(0);
+    const wi = legalDiscardIndex(h[0], st[0].pickDiscard(h[0], ctx0));
     const disc = h[0].splice(wi, 1)[0]; dp.push(disc);
     const m7 = findBestMelds(h[0]);
-    if (st[0].canCut(m7, scores[0], h[0])) {
+    if (st[0].canCut(m7, h[0], ctx0)) {
       const cs = cutScore(h[0]); const other = findBestMelds(h[1]);
       return { winner: 0, cards: 0, addScores: [cs.score, other.resto], chinchon: cs.chinchon };
     }
   }
   // Player 1 can cut with their initial 7 cards before their first turn
   {
+    const ctx1 = makeCtx(1);
     const m7 = findBestMelds(h[1]);
-    if (st[1].canCut(m7, scores[1], h[1])) {
+    if (st[1].canCut(m7, h[1], ctx1)) {
       const cs = cutScore(h[1]); const other = findBestMelds(h[0]);
       return { winner: 1, cards: 0, addScores: [other.resto, cs.score], chinchon: cs.chinchon };
     }
@@ -214,16 +246,22 @@ export function playRoundScored(
   for (let t = 0; t < 80; t++) {
     const p = (1 - (t % 2)) as 0 | 1; if (!deck.length) break;
     const top = dp.length ? dp[dp.length - 1] : null;
+    const ctx = makeCtx(p);
     let card: Card;
-    if (top && st[p].drawConfig && shouldDrawDiscard(h[p], top, st[p])) { card = dp.pop()!; }
+    let drewFromDiscard = false;
+    if (top && st[p].shouldDraw(h[p], top, ctx)) { card = dp.pop()!; drewFromDiscard = true; }
     else { card = deck.pop()!; }
     h[p].push(card);
-    const wi = legalDiscardIndex(h[p], st[p].pickDiscard(h[p]));
+    const wi = legalDiscardIndex(h[p], st[p].pickDiscard(h[p], ctx));
     const disc = h[p][wi]; const kept = !sameCard(disc, card); h[p].splice(wi, 1);
     dp.push(disc);
-    if (kept) dr[p]++;
+    if (kept) {
+      dr[p]++;
+      if (drewFromDiscard) keptFromDiscard[p]++;
+      else keptFromDeck[p]++;
+    }
     const m7 = findBestMelds(h[p]);
-    if (st[p].canCut(m7, scores[p], h[p])) {
+    if (st[p].canCut(m7, h[p], makeCtx(p))) {
       const cs = cutScore(h[p]); const other = findBestMelds(h[1 - p as 0 | 1]);
       return {
         winner: p,

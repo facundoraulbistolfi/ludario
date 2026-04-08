@@ -5,9 +5,9 @@ import {
   legalDiscardIndex,
   playRoundScored,
   sameCard,
-  shouldDrawDiscard,
   shuffle,
   type Card,
+  type GameContext,
 } from './chinchon-bot-game'
 import { createBotCatalog, type BotConfig, type BotRuntime } from './chinchon-bot-presets'
 
@@ -123,21 +123,35 @@ export function playReplay(
   const deck = deckIn
   const strategies: [BotRuntime, BotRuntime] = [strat0, strat1]
   const drawn: [number, number] = [0, 0]
+  const keptFromDeck: [number, number] = [0, 0]
+  const keptFromDiscard: [number, number] = [0, 0]
   const steps: ReplayStep[] = []
   const discardPile: Card[] = []
   const snapshotHands = () => [hands[0].map(card => ({ ...card })), hands[1].map(card => ({ ...card }))] as [Card[], Card[]]
   const snapshotMelds = () => [findBestMelds(hands[0]), findBestMelds(hands[1])] as [ReturnType<typeof findBestMelds>, ReturnType<typeof findBestMelds>]
 
+  function makeCtx(p: 0 | 1): GameContext {
+    const opp = (1 - p) as 0 | 1
+    return {
+      myScore: scores[p],
+      oppScore: scores[opp],
+      deckRemaining: deck.length,
+      oppKeptFromDeck: keptFromDeck[opp],
+      oppKeptFromDiscard: keptFromDiscard[opp],
+    }
+  }
+
   if (deck.length) hands[0].push(deck.pop()!)
   steps.push({ type: 'deal', hands: snapshotHands(), melds: snapshotMelds(), drawn: [...drawn] as [number, number] })
 
   {
-    const discardIndex = legalDiscardIndex(hands[0], strategies[0].pickDiscard(hands[0]))
+    const ctx0 = makeCtx(0)
+    const discardIndex = legalDiscardIndex(hands[0], strategies[0].pickDiscard(hands[0], ctx0))
     const discarded = hands[0].splice(discardIndex, 1)[0]
     discardPile.push(discarded)
     const m7 = findBestMelds(hands[0])
     steps.push({ type: 'initial_discard', player: 0, discarded: { ...discarded }, hands: snapshotHands(), melds: snapshotMelds(), freeCards: m7.minFree, drawn: [...drawn] as [number, number] })
-    if (strategies[0].canCut(m7, scores[0], hands[0])) {
+    if (strategies[0].canCut(m7, hands[0], ctx0)) {
       const cut = cutScore(hands[0])
       steps.push({
         type: 'cut',
@@ -157,8 +171,9 @@ export function playReplay(
   }
 
   {
+    const ctx1 = makeCtx(1)
     const m7 = findBestMelds(hands[1])
-    if (strategies[1].canCut(m7, scores[1], hands[1])) {
+    if (strategies[1].canCut(m7, hands[1], ctx1)) {
       const cut = cutScore(hands[1])
       steps.push({
         type: 'cut',
@@ -182,23 +197,30 @@ export function playReplay(
     if (!deck.length) break
 
     const topDiscard = discardPile.length ? discardPile[discardPile.length - 1] : null
+    const ctx = makeCtx(player)
     let card: Card
-    if (topDiscard && strategies[player].drawConfig && shouldDrawDiscard(hands[player], topDiscard, strategies[player])) {
+    let drewFromDiscard = false
+    if (topDiscard && strategies[player].shouldDraw(hands[player], topDiscard, ctx)) {
       card = discardPile.pop()!
+      drewFromDiscard = true
     } else {
       card = deck.pop()!
     }
 
     hands[player].push(card)
-    const discardIndex = legalDiscardIndex(hands[player], strategies[player].pickDiscard(hands[player]))
+    const discardIndex = legalDiscardIndex(hands[player], strategies[player].pickDiscard(hands[player], ctx))
     const discarded = hands[player][discardIndex]
     const kept = !sameCard(discarded, card)
     hands[player].splice(discardIndex, 1)
     discardPile.push(discarded)
-    if (kept) drawn[player] += 1
+    if (kept) {
+      drawn[player] += 1
+      if (drewFromDiscard) keptFromDiscard[player]++
+      else keptFromDeck[player]++
+    }
 
     const m7 = findBestMelds(hands[player])
-    if (strategies[player].canCut(m7, scores[player], hands[player])) {
+    if (strategies[player].canCut(m7, hands[player], makeCtx(player))) {
       const cut = cutScore(hands[player])
       steps.push({
         type: 'cut',

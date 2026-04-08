@@ -7,7 +7,6 @@ import {
   findAllMelds, findBestMelds,
   checkChinchon,
   legalDiscardIndex, cutScore,
-  shouldDrawDiscard,
 } from "../lib/chinchon-bot-game";
 import {
   MIN_SIMULATIONS_BEFORE_STABLE_STOP,
@@ -28,6 +27,22 @@ import {
 import { generateReplayPair } from "../lib/chinchon-arena-sim";
 import { LabAccordionSection, LabPanel, LabTabBar, StickyActionBar } from "./chinchon-lab/Layout";
 import ChinchonLabWorker from "../workers/chinchon-lab.worker?worker";
+import {
+  CUSTOM_EMOJIS as LIB_CUSTOM_EMOJIS,
+  CUSTOM_COLORS as LIB_CUSTOM_COLORS,
+  MAX_CUSTOM_BOTS as LIB_MAX_CUSTOM_BOTS,
+  BUILTIN_BOT_CONFIGS as LIB_BUILTIN_BOT_CONFIGS,
+  defaultScoreRules,
+  createDefaultCustomConfig,
+  buildBotFromConfig as libBuildBot,
+  buildCustomBot as libBuildCustomBot,
+  generateDesc as libGenerateDesc,
+  sanitizeImportConfig as libSanitizeImport,
+  loadCustomConfigs as libLoadCustomConfigs,
+  saveCustomConfigs as libSaveCustomConfigs,
+  isV1Config,
+  migrateV1toV2,
+} from "../lib/chinchon-bot-presets";
 
 const LAB_TABS = [
   { value: "sim", label: "🧪 Simulación", shortLabel: "🧪 Sim" },
@@ -48,6 +63,18 @@ const SUIT_COLOR = ["#60a5fa", "#22c55e", "#f87171", "#fbbf24"];
 const RANK_LABEL = { 0: "🃏", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10", 11: "11", 12: "12" };
 const DRAW_MODE_LABELS = { always_deck: "Solo mazo", smart: "Robo inteligente", aggressive: "Robo agresivo" };
 const DISCARD_MODE_LABELS = { default: "Descarta por valor", high_rank: "Descarta por rango", optimal: "Descarta óptimo" };
+// v2 draw style labels
+function getDrawStyleLabel(cfg) {
+  if (cfg.draw.infoAversion >= 8) return "Solo mazo";
+  if (cfg.draw.improvementThreshold <= 1) return "Robo agresivo";
+  return "Robo selectivo";
+}
+function getDiscardStyleLabel(cfg) {
+  if (cfg.discard.evalScope === "full") return "Desc. exhaustivo";
+  if (cfg.discard.rankBias >= 5) return "Desc. por rango";
+  if (cfg.discard.potentialBias >= 6) return "Desc. constructor";
+  return "Desc. por valor";
+}
 const RULE_FACTS = [
   "50 cartas",
   "2 comodines",
@@ -152,16 +179,25 @@ const RULE_SECTIONS = [
 ];
 
 function getCutShortLabel(cfg) {
-  if (cfg.cut.pursueChinchon) return "Persigue chinchón";
-  if (cfg.cut.chinchonRunMode) return "Modo corrida";
+  if (cfg.cut.chinchonPursuit >= 4) return "Persigue chinch��n";
+  if (cfg.cut.minus10Pursuit >= 7) return "Busca -10";
   if (cfg.cut.useScoreRules) return "Corte adaptativo";
   return `Corta <= ${cfg.cut.baseResto}`;
 }
 
 function getBotStrategyPills(cfg) {
+  // v2 config (has global/draw.improvementThreshold)
+  if (cfg.global) {
+    return [
+      getDrawStyleLabel(cfg),
+      getDiscardStyleLabel(cfg),
+      getCutShortLabel(cfg),
+    ];
+  }
+  // v1 fallback
   return [
-    DRAW_MODE_LABELS[cfg.draw.mode] ?? cfg.draw.mode,
-    DISCARD_MODE_LABELS[cfg.discard.mode] ?? cfg.discard.mode,
+    DRAW_MODE_LABELS[cfg.draw?.mode] ?? "Robo",
+    DISCARD_MODE_LABELS[cfg.discard?.mode] ?? "Descarte",
     getCutShortLabel(cfg),
   ];
 }
@@ -215,238 +251,21 @@ return false;
 }
 
 /* ==============================================================
-BOTS
+BOTS — delegates to src/lib/chinchon-bot-presets.ts (v2 schema)
 ============================================================== */
-function defaultDiscard(hand8) {
-const a = findBestMelds(hand8); const inM = new Set(a.meldsCut.flat());
-let wi = -1, ws = -1;
-hand8.forEach((c, i) => { if (!isJoker(c) && !inM.has(i) && cardRest(c) > ws) { ws = cardRest(c); wi = i; } });
-return wi === -1 ? hand8.length - 1 : wi;
-}
-function taiDiscard(hand8) {
-const a = findBestMelds(hand8); const inM = new Set(a.melds.flat());
-let wi = -1, ws = -1;
-hand8.forEach((c, i) => { if (!isJoker(c) && !inM.has(i) && c.rank > ws) { ws = c.rank; wi = i; } });
-if (wi === -1) { let hi = -1, hr = -1; hand8.forEach((c, i) => { if (!isJoker(c) && c.rank > hr) { hr = c.rank; hi = i; } }); return hi; }
-return wi;
-}
+const CUSTOM_EMOJIS = LIB_CUSTOM_EMOJIS;
+const CUSTOM_COLORS = LIB_CUSTOM_COLORS;
+const MAX_CUSTOM_BOTS = LIB_MAX_CUSTOM_BOTS;
+const BUILTIN_BOT_CONFIGS = LIB_BUILTIN_BOT_CONFIGS;
+const DEFAULT_CUSTOM_CONFIG = createDefaultCustomConfig;
+const DEFAULT_SCORE_RULES = defaultScoreRules;
 
-/* -- Angry DaiBot: optimal discard - tries all 8 possible discards, picks the one
-that leaves the best 7-card hand (lowest resto, then fewest free cards) -- */
-function angryDiscard(hand8) {
-let bestIdx = 0, bestResto = 9999, bestFree = 99;
-for (let i = 0; i < hand8.length; i++) {
-if (isJoker(hand8[i])) continue;
-const test = hand8.filter((_, j) => j !== i);
-const m = findBestMelds(test);
-if (m.minFree < bestFree || (m.minFree === bestFree && m.resto < bestResto)) {
-bestIdx = i; bestResto = m.resto; bestFree = m.minFree;
-}
-}
-return bestIdx;
-}
-
-/* -- Angry DaiBot: check if close to chinchón (5+ same suit consecutive, counting jokers) -- */
-function nearChinchon(hand) {
-const jokers = hand.filter(isJoker).length;
-const bySuit = {};
-hand.forEach(c => { if (!isJoker(c)) (bySuit[c.suit] ??= []).push(RANK_ORDER[c.rank]); });
-for (const orders of Object.values(bySuit)) {
-// best consecutive run length in this suit + available jokers
-orders.sort((a, b) => a - b);
-// check spans: for each window of 7, how many are present?
-for (let start = 0; start <= 5; start++) {
-let present = 0;
-for (let p = start; p <= start + 6; p++) {
-if (orders.includes(p)) present++;
-}
-if (present + jokers >= 6) return true; // only 1-2 cards away from chinchón
-}
-}
-return false;
-}
-
-/* ==============================================================
-CUSTOM BOT SYSTEM
-============================================================== */
-// Built-in bot emojis (🤖🎀🔮🔴⚙️😈) are reserved and excluded from custom selection
-const CUSTOM_EMOJIS = [
-"🧪", "⚡", "🎲", "💎", "🦾", "🧠", "🔥", "🤡",
-"🎯", "🎭", "🚀", "💀", "👻", "🕷️", "🍀", "🌟",
-"👑", "🐉", "🦊", "🦁", "🌊", "🏆", "🌋", "🛡️",
-"🎪", "🎸", "🦈", "🦋", "🌈", "🎩", "🔱", "🌀",
-];
-const CUSTOM_COLORS = [
-{ color: "#f59e0b", text: "text-amber-400", bg: "bg-amber-950", border: "border-amber-800" },
-{ color: "#06b6d4", text: "text-cyan-400", bg: "bg-cyan-950", border: "border-cyan-800" },
-{ color: "#f97316", text: "text-orange-400", bg: "bg-orange-950", border: "border-orange-800" },
-{ color: "#14b8a6", text: "text-teal-400", bg: "bg-teal-950", border: "border-teal-800" },
-{ color: "#fb7185", text: "text-rose-400", bg: "bg-rose-950", border: "border-rose-800" },
-{ color: "#818cf8", text: "text-indigo-400", bg: "bg-indigo-950", border: "border-indigo-800" },
-{ color: "#a3e635", text: "text-lime-400", bg: "bg-lime-950", border: "border-lime-800" },
-{ color: "#c084fc", text: "text-purple-400", bg: "bg-purple-950", border: "border-purple-800" },
-];
-const MAX_CUSTOM_BOTS = 8;
-const DEFAULT_SCORE_RULES = () => [{ minScore: 0, maxResto: 5 }, { minScore: 25, maxResto: 3 }, { minScore: 50, maxResto: 2 }, { minScore: 75, maxResto: 1 }];
-const DEFAULT_CUSTOM_CONFIG = () => ({
-id: "custom-" + Date.now(),
-name: "Mi Bot",
-emoji: "🧪",
-colorIdx: 0,
-description: "",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "default" },
-cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
-});
-
-
-function buildCanCut(cut) {
-return (m7, score, hand) => {
-if (cut.pursueChinchon && nearChinchonCustom(hand, cut.chinchonThreshold ?? 6)) return m7.minFree === 0;
-if (cut.chinchonRunMode && has4RunSameSuit(hand)) return m7.minFree === 0;
-const maxR = cut.useScoreRules
-? ([...cut.scoreRules].reverse().find(r => (score ?? 0) >= r.minScore)?.maxResto ?? cut.baseResto)
-: cut.baseResto;
-return m7.minFree <= cut.maxFree && m7.resto <= Math.min(maxR, 5);
-};
-}
-
-function generateDesc(cfg) {
-const parts = [];
-const dm = { always_deck: "Solo mazo", smart: "Robo inteligente", aggressive: "Robo agresivo" };
-parts.push(dm[cfg.draw.mode] || "Robo inteligente");
-const dd = { default: "Desc. por valor", high_rank: "Desc. por rango", optimal: "Desc. óptimo" };
-parts.push(dd[cfg.discard.mode] || "Desc. por valor");
-if (cfg.cut.useScoreRules) parts.push("Corte adaptativo");
-else parts.push("Corte ≤" + cfg.cut.baseResto);
-if (cfg.cut.chinchonRunMode) parts.push("🏃corrida");
-if (cfg.cut.pursueChinchon) parts.push("🎯chinchón(" + (cfg.cut.chinchonThreshold ?? 6) + ")");
-return parts.join(" · ");
-}
-
-function buildBotFromConfig(cfg) {
-const color = cfg.color ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].color;
-const text = cfg.text ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].text;
-const bg = cfg.bg ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].bg;
-const border = cfg.border ?? CUSTOM_COLORS[cfg.colorIdx % CUSTOM_COLORS.length].border;
-return {
-id: cfg.id, name: cfg.name, emoji: cfg.emoji,
-color, text, bg, border,
-desc: generateDesc(cfg), description: cfg.description ?? "",
-custom: !cfg.color, // color field present = builtin
-drawConfig: cfg.draw,
-canCut: buildCanCut(cfg.cut),
-pickDiscard: cfg.discard.mode === "high_rank" ? taiDiscard : cfg.discard.mode === "optimal" ? angryDiscard : defaultDiscard,
-};
-}
-
-function buildCustomBot(cfg) { return buildBotFromConfig(cfg); }
-
-function sanitizeImportConfig(raw) {
-if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-if (typeof raw.name !== "string" || !raw.name.trim()) return null;
-if (!raw.draw || !raw.discard || !raw.cut) return null;
-const draw = raw.draw ?? {};
-const discard = raw.discard ?? {};
-const cut = raw.cut ?? {};
-const validDraw = ["always_deck", "smart", "aggressive"];
-const validDiscard = ["default", "high_rank", "optimal"];
-if (!validDraw.includes(draw.mode)) return null;
-if (!validDiscard.includes(discard.mode)) return null;
-return {
-id: "custom-" + Date.now(),
-name: String(raw.name).slice(0, 12).trim(),
-emoji: CUSTOM_EMOJIS.includes(String(raw.emoji)) ? String(raw.emoji) : "🧪",
-colorIdx: typeof raw.colorIdx === "number" ? Math.min(Math.max(0, Math.floor(raw.colorIdx)), CUSTOM_COLORS.length - 1) : 0,
-description: typeof raw.description === "string" ? raw.description.slice(0, 120) : "",
-draw: {
-mode: draw.mode,
-restoThreshold: typeof draw.restoThreshold === "number" ? Math.min(Math.max(1, Math.floor(draw.restoThreshold)), 10) : 3,
-},
-discard: { mode: discard.mode },
-cut: {
-maxFree: typeof cut.maxFree === "number" ? Math.min(Math.max(0, Math.floor(cut.maxFree)), 1) : 1,
-baseResto: Math.min(Math.max(0, Math.floor(cut.baseResto ?? 5)), 5),
-useScoreRules: Boolean(cut.useScoreRules),
-scoreRules: Array.isArray(cut.scoreRules)
-? DEFAULT_SCORE_RULES().map((def, i) => ({ minScore: def.minScore, maxResto: Math.min(Math.max(0, Math.floor(cut.scoreRules[i]?.maxResto ?? def.maxResto)), 5) }))
-: DEFAULT_SCORE_RULES(),
-pursueChinchon: Boolean(cut.pursueChinchon),
-chinchonThreshold: [5, 6].includes(cut.chinchonThreshold) ? cut.chinchonThreshold : 6,
-chinchonRunMode: Boolean(cut.chinchonRunMode),
-},
-};
-}
-
-function loadCustomConfigs() {
-try {
-const configs = JSON.parse(
-localStorage.getItem("chinchon-lab-custom-bots")
-?? localStorage.getItem("chinchon-arena-custom-bots")
-?? "[]"
-);
-if (!Array.isArray(configs)) return [];
-// Clamp resto values to the legal game maximum of 5
-return configs.slice(0, MAX_CUSTOM_BOTS).map(cfg => ({
-...cfg,
-cut: {
-...cfg.cut,
-baseResto: Math.min(cfg.cut?.baseResto ?? 5, 5),
-scoreRules: (cfg.cut?.scoreRules ?? []).map(r => ({ ...r, maxResto: Math.min(r.maxResto ?? 5, 5) })),
-},
-}));
-} catch { return []; }
-}
-function saveCustomConfigs(configs) {
-const safeConfigs = configs.slice(0, MAX_CUSTOM_BOTS);
-localStorage.setItem("chinchon-lab-custom-bots", JSON.stringify(safeConfigs));
-localStorage.setItem("chinchon-arena-custom-bots", JSON.stringify(safeConfigs));
-}
-
-const BUILTIN_BOT_CONFIGS = [
-{ id: "facutron", name: "FacuTron", emoji: "🤖",
-color: "#34d399", text: "text-emerald-400", bg: "bg-emerald-950", border: "border-emerald-800",
-description: "Bot equilibrado. Corta en cuanto tiene la mano razonablemente limpia, sin buscar chinchón ni esperar demasiado.",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "default" },
-cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
-},
-{ id: "daibot", name: "DaiBot", emoji: "🎀",
-color: "#f472b6", text: "text-pink-400", bg: "bg-pink-950", border: "border-pink-800",
-description: "Muy paciente. Solo corta cuando todas sus cartas están en melds, apuntando al -10 o al chinchón. Puede tardar muchas rondas.",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "default" },
-cut: { maxFree: 0, baseResto: 0, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
-},
-{ id: "candelaria", name: "Candelar-IA", emoji: "🔮",
-color: "#38bdf8", text: "text-sky-400", bg: "bg-sky-950", border: "border-sky-800",
-description: "Cambia de estrategia según el marcador: antes de los 50 puntos exige la mano perfecta, después afloja un poco y acepta hasta 3 de resto.",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "default" },
-cut: { maxFree: 1, baseResto: 3, useScoreRules: true, scoreRules: [{ minScore: 0, maxResto: 0 }, { minScore: 25, maxResto: 0 }, { minScore: 50, maxResto: 3 }, { minScore: 75, maxResto: 3 }], pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
-},
-{ id: "tai", name: "T.A.I", emoji: "🔴",
-color: "#f87171", text: "text-red-400", bg: "bg-red-950", border: "border-red-800",
-description: "Agresiva en el descarte: siempre tira la carta con número más alto. Corta apenas tiene el resto bajo, sin esperar la perfección.",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "high_rank" },
-cut: { maxFree: 1, baseResto: 3, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: false },
-},
-{ id: "martinmatic", name: "MartinMatic", emoji: "⚙️",
-color: "#9ca3af", text: "text-gray-400", bg: "bg-gray-900", border: "border-gray-700",
-description: "Juega agresivo en general, pero si arma una corrida de 4+ cartas del mismo palo cambia de modo y espera para hacer chinchón.",
-draw: { mode: "smart", restoThreshold: 3 },
-discard: { mode: "default" },
-cut: { maxFree: 1, baseResto: 5, useScoreRules: false, scoreRules: DEFAULT_SCORE_RULES(), pursueChinchon: false, chinchonThreshold: 6, chinchonRunMode: true },
-},
-{ id: "angrydai", name: "Angry DaiBot", emoji: "😈",
-color: "#a78bfa", text: "text-violet-400", bg: "bg-violet-950", border: "border-violet-800",
-description: "La IA más compleja: descarte óptimo calculado, umbrales de corte que cambian con el puntaje y caza el chinchón cuando está cerca.",
-draw: { mode: "aggressive" },
-discard: { mode: "optimal" },
-cut: { maxFree: 1, baseResto: 2, useScoreRules: true, scoreRules: [{ minScore: 0, maxResto: 2 }, { minScore: 25, maxResto: 2 }, { minScore: 50, maxResto: 3 }, { minScore: 75, maxResto: 1 }], pursueChinchon: true, chinchonThreshold: 6, chinchonRunMode: false },
-},
-];
+function buildBotFromConfig(cfg) { return libBuildBot(cfg); }
+function buildCustomBot(cfg) { return libBuildCustomBot(cfg); }
+function generateDesc(cfg) { return libGenerateDesc(cfg); }
+function sanitizeImportConfig(raw) { return libSanitizeImport(raw); }
+function loadCustomConfigs() { return libLoadCustomConfigs(); }
+function saveCustomConfigs(configs) { return libSaveCustomConfigs(configs); }
 
 const BUILTIN_BOTS = BUILTIN_BOT_CONFIGS.map(buildBotFromConfig);
 
@@ -469,11 +288,12 @@ return { phase, deck, discardPile: [], pHand, bHand, scores: [...scores], dealer
 }
 function botTakeTurn(g, botObj) {
 const hand = [...g.bHand.map(c => ({ ...c }))], deck = [...g.deck], dp = [...g.discardPile];
+const ctx = { myScore: g.scores[1], oppScore: g.scores[0], deckRemaining: deck.length, oppKeptFromDeck: 0, oppKeptFromDiscard: 0 };
 // Initial turn: bot has 8 cards, only discards (no draw)
 if (hand.length === 8) {
-  const wi = legalDiscardIndex(hand, botObj.pickDiscard(hand)); const disc = hand.splice(wi, 1)[0]; dp.push(disc);
+  const wi = legalDiscardIndex(hand, botObj.pickDiscard(hand, ctx)); const disc = hand.splice(wi, 1)[0]; dp.push(disc);
   const m7 = findBestMelds(hand);
-  if (botObj.canCut(m7, g.scores[1], hand)) {
+  if (botObj.canCut(m7, hand, ctx)) {
     const cs = cutScore(hand); const pM = findBestMelds(g.pHand);
     return { ...g, bHand: hand, deck, discardPile: dp, phase: "roundEnd", drawnCard: null, botDiscard: disc,
       botLastAction: { drew: "initial", discarded: disc },
@@ -484,16 +304,16 @@ if (hand.length === 8) {
 const top = dp.length ? dp[dp.length - 1] : null;
 let drawDisc = false;
 if (top && deck.length) {
-if (botObj.drawConfig) { drawDisc = shouldDrawDiscard(hand, top, botObj); }
-else { const t2 = [...hand, { ...top }]; const b7 = findBestMelds(hand); const a8 = findBestMelds(t2); if (a8.minFree < b7.minFree || a8.resto < b7.resto - 3) drawDisc = true; }
+  drawDisc = botObj.shouldDraw(hand, top, ctx);
 }
 let drawn;
 if (drawDisc && dp.length) drawn = dp.pop(); else if (deck.length) drawn = deck.pop();
 else return { ...g, phase: "roundEnd", roundResult: { reason: "empty" } };
 hand.push(drawn);
-const wi = legalDiscardIndex(hand, botObj.pickDiscard(hand)); const disc = hand.splice(wi, 1)[0]; dp.push(disc);
+const ctxAfterDraw = { ...ctx, deckRemaining: deck.length };
+const wi = legalDiscardIndex(hand, botObj.pickDiscard(hand, ctxAfterDraw)); const disc = hand.splice(wi, 1)[0]; dp.push(disc);
 const m7 = findBestMelds(hand);
-if (botObj.canCut(m7, g.scores[1], hand)) {
+if (botObj.canCut(m7, hand, ctxAfterDraw)) {
 const cs = cutScore(hand); const pM = findBestMelds(g.pHand);
 return { ...g, bHand: hand, deck, discardPile: dp, phase: "roundEnd", drawnCard: drawn, botDiscard: disc,
 botLastAction: { drew: drawDisc ? "discard" : "deck", discarded: disc },
