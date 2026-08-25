@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#e9e3d8">
+  <title>Nexo</title>
+  <style>
+    :root{--paper:#e9e3d8;--paper2:#f5f0e6;--ink:#171816;--blue:#1559d6;--red:#e3462f;--gold:#e3ad37;--muted:#6d6b64;--line:#b9b3a7;--shadow:8px 8px 0 #171816}
+    *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--paper);color:var(--ink);font-family:Arial,Helvetica,sans-serif}body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.23;background-image:repeating-linear-gradient(0deg,transparent 0 4px,#857f7412 5px,transparent 6px)}
+    button,input{font:inherit}button{touch-action:manipulation}.hidden{display:none!important}.app{width:min(100%,760px);margin:auto;min-height:100dvh;padding:calc(12px + env(safe-area-inset-top)) 12px calc(18px + env(safe-area-inset-bottom));position:relative}.kicker{font-weight:900;letter-spacing:.18em;text-transform:uppercase;font-size:10px}.muted{color:var(--muted)}
+    .setup{min-height:calc(100dvh - 32px);display:flex;flex-direction:column;justify-content:center}.mark{display:grid;grid-template-columns:repeat(3,25px);gap:3px;width:max-content;transform:skewX(-18deg);margin-bottom:22px}.mark i{height:28px;background:var(--ink)}.mark i:nth-child(2){background:var(--blue)}.mark i:nth-child(3){background:var(--red)}.title{font-size:clamp(65px,21vw,110px);font-weight:950;line-height:.78;letter-spacing:-.075em;margin:0}.claim{display:flex;align-items:center;gap:10px;font-weight:900;letter-spacing:.12em;font-size:11px;margin:18px 0 30px}.claim:before{content:"";width:52px;height:5px;background:var(--blue);box-shadow:26px 0 0 var(--red)}.setup-box{background:var(--paper2);border:2px solid var(--ink);padding:16px;box-shadow:var(--shadow)}.names{display:grid;grid-template-columns:1fr 1fr;gap:9px}.field label{display:block;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px}.field:first-child label{color:var(--blue)}.field:last-child label{color:var(--red)}.field input{width:100%;border:2px solid var(--ink);background:#fffdf7;color:var(--ink);padding:12px 10px;outline:0;border-radius:0}.field input:focus{box-shadow:inset 0 -4px 0 var(--gold)}
+    .size-title{margin:18px 0 7px}.sizes{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.size{position:relative}.size input{position:absolute;opacity:0;pointer-events:none}.size label{display:block;border:2px solid var(--ink);padding:10px 6px;background:transparent;text-align:center;cursor:pointer}.size label b{font-size:18px;display:block}.size label small{font-size:9px;color:var(--muted)}.size input:checked+label{background:var(--ink);color:var(--paper2)}.size input:checked+label small{color:#d6d0c5}.switch{display:flex;justify-content:space-between;gap:15px;align-items:center;margin:14px 0;padding-top:12px;border-top:1px solid var(--line)}.switch span{font-size:12px;line-height:1.35}.toggle{width:46px;height:26px;position:relative;flex:none}.toggle input{position:absolute;opacity:0}.toggle i{position:absolute;inset:0;border:2px solid var(--ink);background:#fffdf7}.toggle i:after{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;background:var(--ink);transition:.18s}.toggle input:checked+i{background:var(--gold)}.toggle input:checked+i:after{transform:translateX(19px)}
+    .primary{width:100%;border:2px solid var(--ink);background:var(--ink);color:var(--paper2);padding:14px;font-weight:950;text-transform:uppercase;letter-spacing:.12em;cursor:pointer}.primary:active{transform:translate(2px,2px)}.text-btn{border:0;background:transparent;text-decoration:underline;text-underline-offset:3px;font-weight:800;cursor:pointer;color:var(--ink)}
+    .topbar{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid var(--ink);padding:0 0 9px}.logo{font-size:24px;font-weight:950;letter-spacing:-.06em}.topmeta{text-align:center}.topmeta b{display:block;font-size:10px;letter-spacing:.12em}.topmeta span{font-size:9px;color:var(--muted)}.top-actions{display:flex;gap:5px}.square-btn{width:34px;height:34px;border:2px solid var(--ink);background:transparent;font-weight:900;cursor:pointer}
+    .scoreboard{display:grid;grid-template-columns:1fr 1fr;margin:10px 0 8px;border:2px solid var(--ink)}.player{padding:9px 10px;position:relative;background:var(--paper2)}.player+.player{border-left:2px solid var(--ink)}.player.blue{box-shadow:inset 0 5px 0 var(--blue)}.player.red{box-shadow:inset 0 5px 0 var(--red)}.player.active:after{content:"TURNO";position:absolute;right:7px;top:8px;background:var(--gold);color:var(--ink);font-size:7px;font-weight:950;letter-spacing:.1em;padding:3px 4px}.pname{font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:40px;margin-top:4px}.objective{font-size:9px;color:var(--muted);margin:4px 0 7px}.metric{display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:6px;font-size:9px;text-transform:uppercase;letter-spacing:.06em}.metric b{font-size:13px;color:var(--ink)}.player.blue .metric b{color:var(--blue)}.player.red .metric b{color:var(--red)}
+    .turnline{display:flex;justify-content:space-between;align-items:end;margin:12px 1px 5px}.turnline h2{font-size:21px;margin:2px 0 0;line-height:1}.turnline .how{font-size:10px;text-align:right;color:var(--muted)}.turnline .how b{color:var(--ink)}
+    .board-frame{border:2px solid var(--ink);background:#f8f4e9;padding:7px 5px 4px;position:relative;overflow:hidden}.edge-label{position:absolute;z-index:2;font-size:7px;font-weight:950;letter-spacing:.12em;text-transform:uppercase;pointer-events:none}.edge-label.north{top:5px;left:50%;transform:translateX(-50%);color:var(--blue)}.edge-label.south{bottom:4px;left:50%;transform:translateX(-50%);color:var(--blue)}.edge-label.west{left:2px;top:50%;transform:translateY(-50%) rotate(-90deg);color:var(--red)}.edge-label.east{right:0;top:50%;transform:translateY(-50%) rotate(90deg);color:var(--red)}#board{width:100%;height:auto;display:block;min-height:250px}.cell polygon{stroke:var(--ink);stroke-width:2;vector-effect:non-scaling-stroke;transition:fill .12s,transform .12s}.cell.empty polygon{fill:#e8e1d3}.cell.empty:hover polygon,.cell.empty:focus polygon{fill:#d8d0c0}.cell.blue polygon{fill:var(--blue)}.cell.red polygon{fill:var(--red)}.cell.selected polygon{fill:var(--gold);stroke-width:4}.cell.win polygon{stroke:var(--gold);stroke-width:5}.cell text{font:900 20px Arial;fill:#fff;text-anchor:middle;dominant-baseline:central;pointer-events:none}.cell.selected text{fill:var(--ink)}.rail-blue{stroke:var(--blue);stroke-width:9;fill:none;stroke-linecap:square}.rail-red{stroke:var(--red);stroke-width:9;fill:none;stroke-linecap:square}
+    .action{border:2px solid var(--ink);border-top:0;background:var(--paper2);min-height:63px;padding:10px}.idle{display:flex;justify-content:space-between;align-items:center;font-size:11px}.idle b{font-size:13px}.selection{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center}.selection span{font-size:10px}.selection span b{display:block;font-size:15px}.small-action{border:2px solid var(--ink);background:transparent;color:var(--ink);padding:10px 12px;font-size:10px;font-weight:950;text-transform:uppercase;cursor:pointer}.small-action.confirm{background:var(--ink);color:var(--paper2)}.swap-offer{margin-top:8px;border:2px solid var(--ink);background:var(--gold);padding:10px;display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}.swap-offer b{font-size:12px}.swap-offer p{font-size:9px;margin:3px 0 0;line-height:1.3}.swap-offer button{border:2px solid var(--ink);background:var(--ink);color:#fff;padding:10px 8px;font-size:9px;font-weight:950;text-transform:uppercase}
+    .legend{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:9px;color:var(--muted)}.legend b{color:var(--ink)}.no-luck{display:flex;align-items:center;gap:6px}.no-luck i{display:block;width:9px;height:9px;background:var(--gold);transform:rotate(45deg)}
+    .overlay{position:fixed;inset:0;z-index:30;background:#171816ed;display:grid;place-items:center;padding:20px}.handoff{width:min(100%,430px);background:var(--paper2);color:var(--ink);border:3px solid var(--ink);box-shadow:10px 10px 0 var(--gold);padding:27px 22px;text-align:center}.handoff-mark{width:64px;height:64px;margin:0 auto 19px;border:8px solid var(--current);transform:rotate(45deg);display:grid;place-items:center}.handoff-mark span{transform:rotate(-45deg);font-weight:950;font-size:25px;color:var(--current)}.handoff h2{font-size:27px;margin:4px 0 7px;letter-spacing:-.03em}.handoff p{font-size:12px;color:var(--muted);line-height:1.45;margin:0 0 20px}.handoff .primary{background:var(--current);border-color:var(--current)}
+    dialog{width:min(calc(100% - 22px),620px);max-height:88dvh;padding:0;border:3px solid var(--ink);background:var(--paper2);color:var(--ink);box-shadow:9px 9px 0 var(--gold)}dialog::backdrop{background:#171816d9}.modal-head{position:sticky;top:0;background:var(--paper2);display:flex;justify-content:space-between;align-items:center;padding:13px 15px;border-bottom:2px solid var(--ink);z-index:2}.modal-head h2{font-size:20px;margin:0}.modal-body{padding:16px;line-height:1.45;font-size:12px}.steps{counter-reset:s;display:grid;gap:10px;margin-bottom:18px}.step{display:grid;grid-template-columns:31px 1fr;gap:10px;align-items:start}.step:before{counter-increment:s;content:counter(s);width:31px;height:31px;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:950}.step b{display:block}.tip{border-left:7px solid var(--gold);padding:8px 11px;background:#e8dfce;margin-top:8px}.tip b{display:block;margin-bottom:3px}.end-stats{display:grid;grid-template-columns:1fr 1fr;border:2px solid var(--ink);margin:18px 0}.end-stats div{padding:9px}.end-stats div+div{border-left:2px solid var(--ink)}.end-stats b{display:block;font-size:22px}.secondary{width:100%;border:2px solid var(--ink);background:transparent;color:var(--ink);padding:11px;margin-top:7px;font-weight:900;text-transform:uppercase}
+    @media(min-width:560px){.app{padding-left:18px;padding-right:18px}.board-frame{padding:12px 14px 8px}#board{max-height:500px}.setup-box{padding:20px}.scoreboard{margin-top:14px}}@media(max-width:365px){.app{padding-left:8px;padding-right:8px}.scoreboard{margin-top:7px}.player{padding:8px}.pname{font-size:13px}.objective{font-size:8px}.turnline{margin-top:9px}.board-frame{padding-left:1px;padding-right:1px}#board{min-height:220px}.selection{grid-template-columns:1fr auto}.selection .cancel{display:none}}
+  </style>
+</head>
+<body>
+<main class="app">
+  <section id="setup" class="setup">
+    <div class="mark"><i></i><i></i><i></i></div>
+    <div class="kicker">Duelo abstracto para dos</div>
+    <h1 class="title">NEXO</h1>
+    <div class="claim">CERO AZAR · DECISIÓN TOTAL</div>
+    <div class="setup-box">
+      <div class="names">
+        <div class="field"><label for="nameBlue">Empieza · Azul</label><input id="nameBlue" maxlength="14" value="Azul" autocomplete="off"></div>
+        <div class="field"><label for="nameRed">Segundo · Rojo</label><input id="nameRed" maxlength="14" value="Rojo" autocomplete="off"></div>
+      </div>
+      <div class="kicker size-title">Tamaño del territorio</div>
+      <div class="sizes">
+        <div class="size"><input type="radio" name="size" id="s7" value="7"><label for="s7"><b>7×7</b><small>rápido</small></label></div>
+        <div class="size"><input type="radio" name="size" id="s9" value="9" checked><label for="s9"><b>9×9</b><small>estratégico</small></label></div>
+        <div class="size"><input type="radio" name="size" id="s11" value="11"><label for="s11"><b>11×11</b><small>experto</small></label></div>
+      </div>
+      <div class="switch"><span><b>Regla de intercambio</b><br><span class="muted">El segundo puede tomar la primera ficha. Equilibra el inicio.</span></span><label class="toggle"><input id="swapRule" type="checkbox" checked><i></i></label></div>
+      <button id="start" class="primary">Abrir el tablero</button>
+    </div>
+  </section>
+
+  <section id="game" class="hidden">
+    <header class="topbar">
+      <div class="logo">NEXO</div>
+      <div class="topmeta"><b id="boardSize">9 × 9</b><span id="moveCount">Movimiento 1</span></div>
+      <div class="top-actions"><button id="rulesBtn" class="square-btn" aria-label="Reglas">?</button><button id="newBtn" class="square-btn" aria-label="Nueva partida">↻</button></div>
+    </header>
+    <section id="scoreboard" class="scoreboard"></section>
+    <div class="turnline"><div><div class="kicker">Le toca a</div><h2 id="turnName">—</h2></div><div class="how" id="turnGoal"></div></div>
+    <section class="board-frame">
+      <span class="edge-label north">Norte</span><span class="edge-label south">Sur</span><span class="edge-label west">Oeste</span><span class="edge-label east">Este</span>
+      <svg id="board" role="grid" aria-label="Tablero de Nexo"></svg>
+    </section>
+    <section class="action">
+      <div id="idle" class="idle"><span><b>Elegí un hexágono vacío</b><br><span class="muted">La ficha no se coloca hasta confirmar.</span></span><span>◇</span></div>
+      <div id="selection" class="selection hidden"><span>Posición elegida <b id="coord">—</b></span><button id="cancel" class="small-action cancel">Cancelar</button><button id="confirm" class="small-action confirm">Confirmar</button></div>
+    </section>
+    <section id="swapOffer" class="swap-offer hidden"><div><b>¿La primera jugada fue demasiado buena?</b><p>Tomá el bando azul. Tu rival pasará a jugar con rojo.</p></div><button id="swapBtn">Intercambiar</button></section>
+    <footer class="legend"><span class="no-luck"><i></i><b>0% azar</b> · información total</span><button id="strategyBtn" class="text-btn">Ideas estratégicas</button></footer>
+  </section>
+</main>
+
+<section id="passOverlay" class="overlay hidden">
+  <div class="handoff" id="handoff">
+    <div class="handoff-mark"><span id="passArrow">↕</span></div><div class="kicker">Cambio de turno</div>
+    <h2>Pasale el celular a <span id="passName"></span></h2>
+    <p id="passGoal"></p><button id="ready" class="primary">Tengo el celular</button>
+  </div>
+</section>
+
+<section id="endOverlay" class="overlay hidden">
+  <div class="handoff" id="endCard">
+    <div class="handoff-mark"><span>✓</span></div><div class="kicker">Conexión completa</div>
+    <h2 id="winner">—</h2><p id="winText"></p>
+    <div id="endStats" class="end-stats"></div>
+    <button id="replay" class="primary">Revancha</button><button id="fresh" class="secondary">Cambiar jugadores</button>
+  </div>
+</section>
+
+<dialog id="rulesDialog">
+  <div class="modal-head"><h2>Cómo se juega</h2><button class="square-btn close-dialog" aria-label="Cerrar">×</button></div>
+  <div class="modal-body">
+    <div class="steps">
+      <div class="step"><div><b>Colocá una ficha</b>Tocá un hexágono vacío y confirmá. No hay cartas, dados ni información oculta.</div></div>
+      <div class="step"><div><b>Uní tus extremos</b>Azul conecta norte con sur. Rojo conecta oeste con este.</div></div>
+      <div class="step"><div><b>Usá los seis lados</b>Las fichas se conectan por cualquier lado del hexágono. Las puntas no cuentan.</div></div>
+      <div class="step"><div><b>Creá una ruta continua</b>Quien completa primero su conexión gana. En Nexo no existen los empates.</div></div>
+    </div>
+    <div class="tip"><b>Regla de intercambio</b>Después de la primera jugada, el segundo jugador puede quedarse con Azul. Así, al empezar, conviene hacer una jugada fuerte pero no abusiva.</div>
+  </div>
+</dialog>
+
+<dialog id="strategyDialog">
+  <div class="modal-head"><h2>Ideas estratégicas</h2><button class="square-btn close-dialog" aria-label="Cerrar">×</button></div>
+  <div class="modal-body">
+    <div class="tip"><b>Construí amenazas dobles</b>Una línea obvia se bloquea fácil. Dos rutas posibles obligan al rival a elegir cuál frenar.</div>
+    <div class="tip"><b>El centro vale flexibilidad</b>Desde el centro podés cambiar de dirección con menos movimientos. Los bordes son útiles cuando ya aseguran un extremo.</div>
+    <div class="tip"><b>Reconocé los puentes</b>Dos fichas separadas por un hueco diagonal suelen defenderse: si el rival ocupa un lado, podés conectar por el otro.</div>
+    <div class="tip"><b>Leé la “ruta mínima”</b>El número bajo cada jugador indica cuántas fichas vacías necesitaría, como mínimo, para completar alguna ruta. No mide amenazas dobles.</div>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  const $=s=>document.querySelector(s);
+  const BLUE=1, RED=2, colors={1:'blue',2:'red'}, arrows={1:'↕',2:'↔'};
+  let state;
+  const safe=s=>String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+  const neighbors=(r,c,n)=>[[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0]].map(([dr,dc])=>[r+dr,c+dc]).filter(([rr,cc])=>rr>=0&&cc>=0&&rr<n&&cc<n);
+  function startGame(keep=false){
+    const n=keep?state.n:+document.querySelector('input[name="size"]:checked').value;
+    const names=keep?[...state.names]:[$('#nameBlue').value.trim()||'Azul',$('#nameRed').value.trim()||'Rojo'];
+    const swapEnabled=keep?state.swapEnabled:$('#swapRule').checked;
+    state={n,names,originalNames:[...names],swapEnabled,swapped:false,turn:BLUE,board:Array.from({length:n},()=>Array(n).fill(0)),selected:null,moves:0,over:false,winPath:[],history:[]};
+    $('#setup').classList.add('hidden');$('#game').classList.remove('hidden');$('#endOverlay').classList.add('hidden');$('#passOverlay').classList.add('hidden');buildBoard();render();
+  }
+  function hexPoints(cx,cy,R){return Array.from({length:6},(_,i)=>{const a=(-90+i*60)*Math.PI/180;return `${(cx+R*Math.cos(a)).toFixed(2)},${(cy+R*Math.sin(a)).toFixed(2)}`}).join(' ')}
+  function cellCenter(r,c,R,W,pad){return [pad+W/2+c*W+r*W/2,pad+R+r*1.5*R]}
+  function buildBoard(){
+    const n=state.n,R=32,W=Math.sqrt(3)*R,pad=31;
+    const width=pad*2+W*(1+1.5*(n-1)),height=pad*2+R*(2+1.5*(n-1));
+    const topA=cellCenter(0,0,R,W,pad),topB=cellCenter(0,n-1,R,W,pad),botA=cellCenter(n-1,0,R,W,pad),botB=cellCenter(n-1,n-1,R,W,pad);
+    let svg=`<line class="rail-blue" x1="${topA[0]-W/2}" y1="${topA[1]-R-8}" x2="${topB[0]+W/2}" y2="${topB[1]-R-8}"/><line class="rail-blue" x1="${botA[0]-W/2}" y1="${botA[1]+R+8}" x2="${botB[0]+W/2}" y2="${botB[1]+R+8}"/><line class="rail-red" x1="${topA[0]-W/2-8}" y1="${topA[1]}" x2="${botA[0]-W/2-8}" y2="${botA[1]}"/><line class="rail-red" x1="${topB[0]+W/2+8}" y1="${topB[1]}" x2="${botB[0]+W/2+8}" y2="${botB[1]}"/>`;
+    for(let r=0;r<n;r++)for(let c=0;c<n;c++){const [cx,cy]=cellCenter(r,c,R,W,pad);svg+=`<g class="cell empty" data-r="${r}" data-c="${c}" role="gridcell" tabindex="0" aria-label="Fila ${r+1}, columna ${String.fromCharCode(65+c)}"><polygon points="${hexPoints(cx,cy,R-2)}"></polygon><text x="${cx}" y="${cy+1}"></text></g>`}
+    const board=$('#board');board.setAttribute('viewBox',`0 0 ${width} ${height}`);board.innerHTML=svg;
+    board.querySelectorAll('.cell').forEach(g=>{g.addEventListener('click',()=>selectCell(+g.dataset.r,+g.dataset.c));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectCell(+g.dataset.r,+g.dataset.c)}})});
+  }
+  function selectCell(r,c){
+    if(state.over||state.board[r][c])return;state.selected={r,c};render();if(navigator.vibrate)navigator.vibrate(10);
+  }
+  function render(){
+    $('#boardSize').textContent=`${state.n} × ${state.n}`;$('#moveCount').textContent=`Movimiento ${state.moves+1}`;
+    $('#turnName').textContent=state.names[state.turn-1];$('#turnName').style.color=state.turn===BLUE?'var(--blue)':'var(--red)';
+    $('#turnGoal').innerHTML=state.turn===BLUE?'Uní <b>NORTE ↕ SUR</b>':'Uní <b>OESTE ↔ ESTE</b>';
+    $('#scoreboard').innerHTML=[BLUE,RED].map(color=>{const stones=state.board.flat().filter(v=>v===color).length,dist=routeDistance(color);return `<article class="player ${colors[color]} ${state.turn===color?'active':''}"><div class="pname">${safe(state.names[color-1])}</div><div class="objective">${color===BLUE?'NORTE ↕ SUR':'OESTE ↔ ESTE'}</div><div class="metric"><span>${stones} fichas</span><span>Ruta mínima <b>${dist}</b></span></div></article>`}).join('');
+    document.querySelectorAll('.cell').forEach(g=>{const r=+g.dataset.r,c=+g.dataset.c,v=state.board[r][c],selected=state.selected&&state.selected.r===r&&state.selected.c===c,win=state.winPath.some(([rr,cc])=>rr===r&&cc===c);g.setAttribute('class',`cell ${v?colors[v]:'empty'} ${selected?'selected':''} ${win?'win':''}`);g.querySelector('text').textContent=v?arrows[v]:selected?arrows[state.turn]:''});
+    const picked=!!state.selected;$('#idle').classList.toggle('hidden',picked);$('#selection').classList.toggle('hidden',!picked);if(picked)$('#coord').textContent=`${String.fromCharCode(65+state.selected.c)}${state.selected.r+1}`;
+    $('#swapOffer').classList.toggle('hidden',!(state.swapEnabled&&!state.swapped&&state.moves===1&&state.turn===RED));
+  }
+  function confirmMove(){
+    if(!state.selected||state.over)return;const {r,c}=state.selected,color=state.turn,name=state.names[color-1];state.board[r][c]=color;state.moves++;state.history.push({name,color,r,c});state.selected=null;
+    const path=winningPath(color);if(path){state.winPath=path;state.over=true;render();return endGame(color)}
+    state.turn=color===BLUE?RED:BLUE;render();showPass();
+  }
+  function showPass(){
+    const color=state.turn;$('#passName').textContent=state.names[color-1];$('#passGoal').textContent=color===BLUE?'Tu objetivo es unir el borde norte con el sur.':'Tu objetivo es unir el borde oeste con el este.';
+    $('#passArrow').textContent=arrows[color];$('#handoff').style.setProperty('--current',color===BLUE?'var(--blue)':'var(--red)');$('#passOverlay').classList.remove('hidden');
+  }
+  function swapSides(){
+    if(!(state.swapEnabled&&!state.swapped&&state.moves===1&&state.turn===RED))return;
+    const chooser=state.names[1];state.names=[state.names[1],state.names[0]];state.swapped=true;state.history.push({swap:true,name:chooser});state.selected=null;state.turn=RED;render();showPass();
+  }
+  function winningPath(color){
+    const n=state.n,queue=[],seen=new Set(),parent=new Map(),key=(r,c)=>`${r},${c}`;
+    if(color===BLUE){for(let c=0;c<n;c++)if(state.board[0][c]===color){queue.push([0,c]);seen.add(key(0,c))}}else{for(let r=0;r<n;r++)if(state.board[r][0]===color){queue.push([r,0]);seen.add(key(r,0))}}
+    for(let i=0;i<queue.length;i++){const [r,c]=queue[i],done=color===BLUE?r===n-1:c===n-1;if(done){const path=[];let k=key(r,c);while(k){path.push(k.split(',').map(Number));k=parent.get(k)}return path}for(const [rr,cc] of neighbors(r,c,n)){const k=key(rr,cc);if(state.board[rr][cc]===color&&!seen.has(k)){seen.add(k);parent.set(k,key(r,c));queue.push([rr,cc])}}}return null;
+  }
+  function routeDistance(color){
+    const n=state.n,enemy=color===BLUE?RED:BLUE,inf=999,dist=Array.from({length:n},()=>Array(n).fill(inf)),done=new Set(),key=(r,c)=>`${r},${c}`;
+    const seed=[];if(color===BLUE){for(let c=0;c<n;c++)seed.push([0,c])}else{for(let r=0;r<n;r++)seed.push([r,0])}
+    for(const [r,c] of seed)if(state.board[r][c]!==enemy)dist[r][c]=state.board[r][c]===color?0:1;
+    for(let step=0;step<n*n;step++){let best=null,bv=inf;for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(!done.has(key(r,c))&&dist[r][c]<bv){bv=dist[r][c];best=[r,c]}if(!best)break;const [r,c]=best;done.add(key(r,c));for(const [rr,cc] of neighbors(r,c,n)){if(state.board[rr][cc]===enemy)continue;const add=state.board[rr][cc]===color?0:1;if(bv+add<dist[rr][cc])dist[rr][cc]=bv+add}}
+    let ans=inf;if(color===BLUE){for(let c=0;c<n;c++)ans=Math.min(ans,dist[n-1][c])}else{for(let r=0;r<n;r++)ans=Math.min(ans,dist[r][n-1])}return ans===inf?'—':ans;
+  }
+  function endGame(color){
+    const name=state.names[color-1],own=state.board.flat().filter(v=>v===color).length,other=state.board.flat().filter(v=>v&&v!==color).length;
+    $('#winner').textContent=`${name} creó el nexo`;$('#winText').textContent=color===BLUE?'Una ruta azul conecta norte y sur.':'Una ruta roja conecta oeste y este.';
+    $('#endCard').style.setProperty('--current',color===BLUE?'var(--blue)':'var(--red)');$('#endStats').innerHTML=`<div>Jugadas totales<b>${state.moves}</b></div><div>Ruta ganadora<b>${state.winPath.length}</b><small>${own} fichas propias · ${other} rivales</small></div>`;setTimeout(()=>$('#endOverlay').classList.remove('hidden'),450);
+  }
+  function backToSetup(){location.reload()}
+  $('#start').onclick=()=>startGame(false);$('#confirm').onclick=confirmMove;$('#cancel').onclick=()=>{state.selected=null;render()};$('#ready').onclick=()=>$('#passOverlay').classList.add('hidden');$('#swapBtn').onclick=swapSides;
+  $('#newBtn').onclick=()=>{if(confirm('¿Abandonar esta partida y volver al inicio?'))backToSetup()};$('#replay').onclick=()=>startGame(true);$('#fresh').onclick=backToSetup;
+  $('#rulesBtn').onclick=()=>$('#rulesDialog').showModal();$('#strategyBtn').onclick=()=>$('#strategyDialog').showModal();document.querySelectorAll('.close-dialog').forEach(b=>b.onclick=()=>b.closest('dialog').close());
+})();
+</script>
+</body>
+</html>
