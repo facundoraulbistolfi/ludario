@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f3efe4" />
+    <meta name="description" content="Memo Duelo: un juego de memoria para dos personas en el mismo celular." />
+    <title>Memo Duelo</title>
+    <style>
+      :root {
+        --paper: #f3efe4;
+        --ink: #102d36;
+        --ink-soft: #5b6b6f;
+        --coral: #f25849;
+        --blue: #2457d6;
+        --white: #fffdf5;
+        --line: #b8b4a7;
+        --shadow: 4px 4px 0 var(--ink);
+        --safe-top: max(14px, env(safe-area-inset-top));
+        --safe-bottom: max(16px, env(safe-area-inset-bottom));
+      }
+
+      * { box-sizing: border-box; }
+
+      html {
+        min-height: 100%;
+        background: var(--paper);
+        -webkit-text-size-adjust: 100%;
+      }
+
+      body {
+        min-width: 300px;
+        min-height: 100svh;
+        margin: 0;
+        overflow-x: hidden;
+        color: var(--ink);
+        background: var(--paper);
+        font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      button, input { font: inherit; }
+      button { color: inherit; }
+
+      .app {
+        width: min(100%, 560px);
+        min-height: 100svh;
+        margin: 0 auto;
+        padding: var(--safe-top) 16px var(--safe-bottom);
+      }
+
+      .screen {
+        display: none;
+        min-height: calc(100svh - var(--safe-top) - var(--safe-bottom));
+      }
+
+      .screen.is-active { display: flex; }
+
+      .setup-screen {
+        flex-direction: column;
+        justify-content: center;
+        padding: 20px 4px;
+      }
+
+      .brand-mark {
+        display: inline-flex;
+        width: 48px;
+        height: 48px;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 22px;
+        border: 2px solid var(--ink);
+        background: var(--coral);
+        box-shadow: var(--shadow);
+        color: var(--white);
+        font-size: 24px;
+        transform: rotate(-4deg);
+      }
+
+      .eyebrow {
+        margin: 0 0 7px;
+        color: var(--coral);
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      h1, h2, p { margin-top: 0; }
+
+      h1 {
+        max-width: 440px;
+        margin-bottom: 14px;
+        font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+        font-size: clamp(54px, 16vw, 82px);
+        font-weight: 900;
+        letter-spacing: -0.035em;
+        line-height: 0.86;
+        text-transform: uppercase;
+      }
+
+      h1 span { color: var(--blue); }
+
+      .intro {
+        max-width: 430px;
+        margin-bottom: 27px;
+        color: var(--ink-soft);
+        font-size: 16px;
+        line-height: 1.5;
+      }
+
+      .setup-form { width: 100%; }
+
+      .name-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      label {
+        display: block;
+        color: var(--ink-soft);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      input {
+        width: 100%;
+        min-height: 52px;
+        margin-top: 7px;
+        padding: 0 13px;
+        border: 2px solid var(--ink);
+        border-radius: 0;
+        outline: 0;
+        color: var(--ink);
+        background: var(--white);
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      input:focus-visible { box-shadow: 4px 4px 0 var(--blue); }
+
+      .primary-button, .secondary-button {
+        width: 100%;
+        min-height: 56px;
+        border: 2px solid var(--ink);
+        border-radius: 0;
+        cursor: pointer;
+        font-size: 15px;
+        font-weight: 950;
+        letter-spacing: 0.02em;
+      }
+
+      .primary-button {
+        background: var(--ink);
+        box-shadow: 5px 5px 0 var(--coral);
+        color: var(--white);
+      }
+
+      .primary-button:active, .secondary-button:active, .small-button:active {
+        transform: translate(3px, 3px);
+        box-shadow: none;
+      }
+
+      .rules {
+        margin-top: 24px;
+        border-top: 1px solid var(--line);
+        color: var(--ink-soft);
+        font-size: 13px;
+      }
+
+      .rules summary {
+        padding: 14px 0;
+        cursor: pointer;
+        color: var(--ink);
+        font-weight: 850;
+      }
+
+      .rules p {
+        margin-bottom: 0;
+        padding: 0 0 4px;
+        line-height: 1.5;
+      }
+
+      .game-screen {
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .game-header {
+        display: flex;
+        min-height: 42px;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 2px solid var(--ink);
+      }
+
+      .mini-brand {
+        margin: 0;
+        font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+        font-size: 21px;
+        letter-spacing: 0.025em;
+        text-transform: uppercase;
+      }
+
+      .mini-brand span { color: var(--coral); }
+
+      .text-button {
+        min-height: 38px;
+        padding: 0 2px;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        color: var(--ink-soft);
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .text-button:focus-visible, .memory-card:focus-visible, button:focus-visible {
+        outline: 3px solid var(--blue);
+        outline-offset: 3px;
+      }
+
+      .scoreboard {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: stretch;
+        border: 2px solid var(--ink);
+        background: var(--white);
+        box-shadow: 4px 4px 0 rgba(16, 45, 54, 0.18);
+      }
+
+      .player-score {
+        position: relative;
+        min-width: 0;
+        padding: 10px 12px 9px;
+        transition: background 180ms ease, color 180ms ease;
+      }
+
+      .player-score:last-child { text-align: right; }
+
+      .player-score.is-active {
+        background: var(--coral);
+        color: var(--white);
+      }
+
+      .player-score.is-active:last-child { background: var(--blue); }
+
+      .player-name {
+        display: block;
+        overflow: hidden;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.05em;
+        text-overflow: ellipsis;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .score-number {
+        display: block;
+        margin-top: 1px;
+        font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+        font-size: 28px;
+        line-height: 1;
+      }
+
+      .score-divider {
+        display: flex;
+        width: 54px;
+        align-items: center;
+        justify-content: center;
+        border-right: 2px solid var(--ink);
+        border-left: 2px solid var(--ink);
+        color: var(--ink-soft);
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-align: center;
+        text-transform: uppercase;
+      }
+
+      .turn-row {
+        display: flex;
+        min-height: 32px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .turn-copy {
+        overflow: hidden;
+        margin: 0;
+        font-size: 14px;
+        font-weight: 850;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .turn-copy strong { color: var(--coral); }
+
+      .progress-copy {
+        flex: none;
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: clamp(7px, 2.3vw, 12px);
+        width: 100%;
+        margin: auto 0;
+        padding-bottom: 4px;
+      }
+
+      .memory-card {
+        position: relative;
+        aspect-ratio: 0.83;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 10px;
+        outline: 0;
+        background: transparent;
+        cursor: pointer;
+        perspective: 800px;
+      }
+
+      .card-inner {
+        position: absolute;
+        inset: 0;
+        transform-style: preserve-3d;
+        transition: transform 360ms cubic-bezier(0.2, 0.75, 0.2, 1);
+      }
+
+      .memory-card.is-revealed .card-inner, .memory-card.is-matched .card-inner {
+        transform: rotateY(180deg);
+      }
+
+      .card-face {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        border: 2px solid var(--ink);
+        border-radius: 10px;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+      }
+
+      .card-back {
+        background: var(--ink);
+        box-shadow: 3px 3px 0 var(--coral);
+        color: rgba(255, 253, 245, 0.85);
+      }
+
+      .card-back::before {
+        content: "✦";
+        font-size: clamp(21px, 7vw, 38px);
+        transform: rotate(12deg);
+      }
+
+      .card-back::after {
+        position: absolute;
+        inset: 7px;
+        border: 1px solid rgba(255, 253, 245, 0.38);
+        border-radius: 5px;
+        content: "";
+      }
+
+      .card-front {
+        background: var(--face, #ffd166);
+        box-shadow: 3px 3px 0 var(--ink);
+        font-size: clamp(29px, 10vw, 50px);
+        transform: rotateY(180deg);
+      }
+
+      .memory-card.is-matched { animation: matched-pop 430ms ease-out; }
+
+      .memory-card.is-matched .card-front {
+        box-shadow: 0 0 0 3px var(--white) inset, 3px 3px 0 var(--ink);
+      }
+
+      .memory-card:disabled { cursor: default; }
+
+      .game-hint {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 11px;
+        line-height: 1.4;
+        text-align: center;
+      }
+
+      .overlay {
+        position: fixed;
+        z-index: 20;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+        background: rgba(16, 45, 54, 0.92);
+      }
+
+      .overlay.is-visible {
+        display: flex;
+        animation: overlay-in 180ms ease-out;
+      }
+
+      .overlay-card {
+        width: min(100%, 420px);
+        padding: 28px 24px 25px;
+        border: 2px solid var(--ink);
+        background: var(--paper);
+        box-shadow: 8px 8px 0 var(--coral);
+        text-align: center;
+      }
+
+      .overlay-icon {
+        display: block;
+        margin-bottom: 10px;
+        font-size: 42px;
+      }
+
+      .overlay-card h2 {
+        margin-bottom: 10px;
+        font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+        font-size: clamp(38px, 11vw, 58px);
+        letter-spacing: -0.02em;
+        line-height: 0.95;
+        text-transform: uppercase;
+      }
+
+      .overlay-card p {
+        margin-bottom: 22px;
+        color: var(--ink-soft);
+        line-height: 1.5;
+      }
+
+      .button-stack { display: grid; gap: 11px; }
+
+      .secondary-button {
+        background: var(--white);
+        box-shadow: 4px 4px 0 var(--ink);
+      }
+
+      .result-score {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 15px;
+        margin: 15px 0 24px;
+        font-family: Impact, Haettenschweiler, "Arial Narrow Bold", sans-serif;
+        font-size: 38px;
+      }
+
+      .result-score small {
+        color: var(--ink-soft);
+        font-family: inherit;
+        font-size: 18px;
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      @keyframes matched-pop {
+        0% { transform: scale(1); }
+        45% { transform: scale(1.08) rotate(-1deg); }
+        100% { transform: scale(1); }
+      }
+
+      @keyframes overlay-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      @media (max-height: 720px) {
+        .game-screen { gap: 8px; }
+        .game-header { min-height: 36px; }
+        .player-score { padding: 7px 10px; }
+        .score-number { font-size: 24px; }
+        .turn-row { min-height: 25px; }
+        .board { gap: 7px; }
+        .game-hint { display: none; }
+      }
+
+      @media (max-width: 360px) {
+        .app { padding-right: 11px; padding-left: 11px; }
+        .name-grid { grid-template-columns: 1fr; }
+        .score-divider { width: 42px; }
+        .board { gap: 6px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <section id="setup-screen" class="screen setup-screen is-active" aria-labelledby="game-title">
+        <div class="brand-mark" aria-hidden="true">✦</div>
+        <p class="eyebrow">Dos personas · un celular</p>
+        <h1 id="game-title">Memo <span>Duelo</span></h1>
+        <p class="intro">Encontrá más parejas que tu rival. Si acertás, seguís jugando; si fallás, pasás el celular.</p>
+
+        <form id="setup-form" class="setup-form">
+          <div class="name-grid">
+            <label>
+              Jugador 1
+              <input id="player-one-input" maxlength="14" value="Jugador 1" autocomplete="off" />
+            </label>
+            <label>
+              Jugador 2
+              <input id="player-two-input" maxlength="14" value="Jugador 2" autocomplete="off" />
+            </label>
+          </div>
+          <button class="primary-button" type="submit">Empezar partida →</button>
+        </form>
+
+        <details class="rules">
+          <summary>¿Cómo se juega?</summary>
+          <p>En tu turno, levantá dos cartas. Si forman pareja, sumás un punto y jugás otra vez. Gana quien tenga más parejas al terminar el tablero.</p>
+        </details>
+      </section>
+
+      <section id="game-screen" class="screen game-screen" aria-label="Partida">
+        <header class="game-header">
+          <p class="mini-brand">Memo <span>Duelo</span></p>
+          <button id="restart-button" class="text-button" type="button">Nueva partida</button>
+        </header>
+
+        <section class="scoreboard" aria-label="Puntaje">
+          <div id="player-one-score-box" class="player-score is-active">
+            <span id="player-one-name" class="player-name">Jugador 1</span>
+            <span id="player-one-score" class="score-number">0</span>
+          </div>
+          <div class="score-divider" aria-hidden="true">vs</div>
+          <div id="player-two-score-box" class="player-score">
+            <span id="player-two-name" class="player-name">Jugador 2</span>
+            <span id="player-two-score" class="score-number">0</span>
+          </div>
+        </section>
+
+        <div class="turn-row">
+          <p id="turn-copy" class="turn-copy" aria-live="polite">Turno de <strong>Jugador 1</strong></p>
+          <p id="progress-copy" class="progress-copy">0 / 8 parejas</p>
+        </div>
+
+        <div id="board" class="board" role="grid" aria-label="Tablero de cartas"></div>
+        <p class="game-hint">Tocá dos cartas. Las parejas encontradas quedan boca arriba.</p>
+      </section>
+    </main>
+
+    <div id="handoff-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="handoff-title" aria-hidden="true">
+      <div class="overlay-card">
+        <span class="overlay-icon" aria-hidden="true">↗</span>
+        <p class="eyebrow">Cambio de turno</p>
+        <h2 id="handoff-title">Pasale el celular</h2>
+        <p id="handoff-copy">Ahora juega Jugador 2.</p>
+        <button id="ready-button" class="primary-button" type="button">Listo, juego yo</button>
+      </div>
+    </div>
+
+    <div id="result-overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-hidden="true">
+      <div class="overlay-card">
+        <span id="result-icon" class="overlay-icon" aria-hidden="true">★</span>
+        <p class="eyebrow">Partida terminada</p>
+        <h2 id="result-title">¡Ganó Jugador 1!</h2>
+        <div class="result-score" aria-label="Resultado final">
+          <span id="result-score-one">0</span>
+          <small>—</small>
+          <span id="result-score-two">0</span>
+        </div>
+        <div class="button-stack">
+          <button id="replay-button" class="primary-button" type="button">Jugar revancha</button>
+          <button id="change-players-button" class="secondary-button" type="button">Cambiar jugadores</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="announcer" class="sr-only" aria-live="assertive"></div>
+
+    <script>
+      (() => {
+        "use strict";
+
+        const SYMBOLS = [
+          { glyph: "🐈", name: "gato", color: "#ffd166" },
+          { glyph: "🍋", name: "limón", color: "#f5d547" },
+          { glyph: "⚡", name: "rayo", color: "#ff8c42" },
+          { glyph: "🌙", name: "luna", color: "#9db7ff" },
+          { glyph: "🎲", name: "dado", color: "#f3a6bd" },
+          { glyph: "🚀", name: "cohete", color: "#8ed8c5" },
+          { glyph: "🍕", name: "pizza", color: "#ffb36b" },
+          { glyph: "👑", name: "corona", color: "#c6a8ff" }
+        ];
+
+        const state = {
+          players: ["Jugador 1", "Jugador 2"],
+          scores: [0, 0],
+          activePlayer: 0,
+          cards: [],
+          flipped: [],
+          locked: false,
+          finished: false
+        };
+
+        const ui = {
+          setupScreen: document.querySelector("#setup-screen"),
+          gameScreen: document.querySelector("#game-screen"),
+          setupForm: document.querySelector("#setup-form"),
+          playerInputs: [document.querySelector("#player-one-input"), document.querySelector("#player-two-input")],
+          playerNames: [document.querySelector("#player-one-name"), document.querySelector("#player-two-name")],
+          scoreBoxes: [document.querySelector("#player-one-score-box"), document.querySelector("#player-two-score-box")],
+          scoreNumbers: [document.querySelector("#player-one-score"), document.querySelector("#player-two-score")],
+          board: document.querySelector("#board"),
+          turnCopy: document.querySelector("#turn-copy"),
+          progressCopy: document.querySelector("#progress-copy"),
+          restartButton: document.querySelector("#restart-button"),
+          handoffOverlay: document.querySelector("#handoff-overlay"),
+          handoffCopy: document.querySelector("#handoff-copy"),
+          readyButton: document.querySelector("#ready-button"),
+          resultOverlay: document.querySelector("#result-overlay"),
+          resultTitle: document.querySelector("#result-title"),
+          resultIcon: document.querySelector("#result-icon"),
+          resultScores: [document.querySelector("#result-score-one"), document.querySelector("#result-score-two")],
+          replayButton: document.querySelector("#replay-button"),
+          changePlayersButton: document.querySelector("#change-players-button"),
+          announcer: document.querySelector("#announcer")
+        };
+
+        function shuffle(items) {
+          const result = [...items];
+          for (let index = result.length - 1; index > 0; index -= 1) {
+            const target = Math.floor(Math.random() * (index + 1));
+            [result[index], result[target]] = [result[target], result[index]];
+          }
+          return result;
+        }
+
+        function vibrate(pattern) {
+          if (typeof navigator.vibrate === "function") navigator.vibrate(pattern);
+        }
+
+        function announce(message) {
+          ui.announcer.textContent = "";
+          window.setTimeout(() => { ui.announcer.textContent = message; }, 30);
+        }
+
+        function cleanName(value, fallback) {
+          const trimmed = value.trim().replace(/\s+/g, " ");
+          return trimmed || fallback;
+        }
+
+        function makeDeck() {
+          const pairs = SYMBOLS.flatMap((symbol, pairIndex) => [
+            { ...symbol, pairIndex, uid: `${pairIndex}-a`, matched: false },
+            { ...symbol, pairIndex, uid: `${pairIndex}-b`, matched: false }
+          ]);
+          return shuffle(pairs);
+        }
+
+        function setOverlay(element, visible) {
+          element.classList.toggle("is-visible", visible);
+          element.setAttribute("aria-hidden", String(!visible));
+        }
+
+        function escapeHtml(value) {
+          return value.replace(/[&<>'"]/g, (character) => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+          })[character]);
+        }
+
+        function buildBoard() {
+          ui.board.replaceChildren();
+          state.cards.forEach((card, index) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "memory-card";
+            button.dataset.index = String(index);
+            button.setAttribute("role", "gridcell");
+            button.setAttribute("aria-label", `Carta ${index + 1}, boca abajo`);
+            button.style.setProperty("--face", card.color);
+            button.innerHTML = `
+              <span class="card-inner">
+                <span class="card-face card-back" aria-hidden="true"></span>
+                <span class="card-face card-front" aria-hidden="true">${card.glyph}</span>
+              </span>
+            `;
+            button.addEventListener("click", () => pickCard(index));
+            ui.board.appendChild(button);
+          });
+          render();
+        }
+
+        function render() {
+          ui.playerNames.forEach((element, index) => { element.textContent = state.players[index]; });
+          ui.scoreNumbers.forEach((element, index) => { element.textContent = String(state.scores[index]); });
+          ui.scoreBoxes.forEach((element, index) => {
+            element.classList.toggle("is-active", index === state.activePlayer && !state.finished);
+          });
+
+          ui.turnCopy.innerHTML = `Turno de <strong>${escapeHtml(state.players[state.activePlayer])}</strong>`;
+          const pairsFound = state.cards.filter((card) => card.matched).length / 2;
+          ui.progressCopy.textContent = `${pairsFound} / ${SYMBOLS.length} parejas`;
+
+          [...ui.board.children].forEach((element, index) => {
+            const card = state.cards[index];
+            const isFlipped = state.flipped.includes(index);
+            element.classList.toggle("is-revealed", isFlipped);
+            element.classList.toggle("is-matched", card.matched);
+            element.disabled = state.locked || card.matched || isFlipped || state.finished;
+            if (card.matched) {
+              element.setAttribute("aria-label", `Pareja encontrada: ${card.name}`);
+            } else if (isFlipped) {
+              element.setAttribute("aria-label", `Carta ${index + 1}: ${card.name}`);
+            } else {
+              element.setAttribute("aria-label", `Carta ${index + 1}, boca abajo`);
+            }
+          });
+        }
+
+        function startMatch() {
+          state.scores = [0, 0];
+          state.activePlayer = 0;
+          state.cards = makeDeck();
+          state.flipped = [];
+          state.locked = false;
+          state.finished = false;
+          setOverlay(ui.handoffOverlay, false);
+          setOverlay(ui.resultOverlay, false);
+          ui.setupScreen.classList.remove("is-active");
+          ui.gameScreen.classList.add("is-active");
+          buildBoard();
+          announce(`Empieza ${state.players[0]}`);
+        }
+
+        function pickCard(index) {
+          const card = state.cards[index];
+          if (state.locked || state.finished || !card || card.matched || state.flipped.includes(index)) return;
+
+          vibrate(12);
+          state.flipped.push(index);
+          render();
+          if (state.flipped.length === 2) {
+            state.locked = true;
+            render();
+            window.setTimeout(resolvePair, 600);
+          }
+        }
+
+        function resolvePair() {
+          const [firstIndex, secondIndex] = state.flipped;
+          const first = state.cards[firstIndex];
+          const second = state.cards[secondIndex];
+
+          if (first.pairIndex === second.pairIndex) {
+            first.matched = true;
+            second.matched = true;
+            state.scores[state.activePlayer] += 1;
+            state.flipped = [];
+            state.locked = false;
+            vibrate([25, 45, 25]);
+            render();
+            announce(`Pareja de ${first.name}. ${state.players[state.activePlayer]} suma un punto y sigue jugando.`);
+            if (state.cards.every((card) => card.matched)) {
+              state.locked = true;
+              window.setTimeout(finishMatch, 650);
+            }
+            return;
+          }
+
+          announce("No forman pareja. Cambia el turno.");
+          window.setTimeout(() => {
+            state.flipped = [];
+            state.activePlayer = state.activePlayer === 0 ? 1 : 0;
+            state.locked = false;
+            render();
+            showHandoff();
+          }, 720);
+        }
+
+        function showHandoff() {
+          ui.handoffCopy.textContent = `Ahora juega ${state.players[state.activePlayer]}.`;
+          setOverlay(ui.handoffOverlay, true);
+          window.setTimeout(() => ui.readyButton.focus(), 30);
+        }
+
+        function finishMatch() {
+          state.finished = true;
+          state.locked = true;
+          render();
+          const [firstScore, secondScore] = state.scores;
+
+          if (firstScore === secondScore) {
+            ui.resultTitle.textContent = "¡Empate total!";
+            ui.resultIcon.textContent = "✦";
+            announce(`Empate ${firstScore} a ${secondScore}`);
+          } else {
+            const winner = firstScore > secondScore ? 0 : 1;
+            ui.resultTitle.textContent = `¡Ganó ${state.players[winner]}!`;
+            ui.resultIcon.textContent = "★";
+            announce(`${state.players[winner]} ganó ${state.scores[winner]} a ${state.scores[winner === 0 ? 1 : 0]}`);
+          }
+
+          ui.resultScores[0].textContent = String(firstScore);
+          ui.resultScores[1].textContent = String(secondScore);
+          setOverlay(ui.resultOverlay, true);
+          vibrate([40, 60, 40, 60, 80]);
+          window.setTimeout(() => ui.replayButton.focus(), 30);
+        }
+
+        function returnToSetup() {
+          setOverlay(ui.resultOverlay, false);
+          setOverlay(ui.handoffOverlay, false);
+          ui.gameScreen.classList.remove("is-active");
+          ui.setupScreen.classList.add("is-active");
+          ui.playerInputs[0].value = state.players[0];
+          ui.playerInputs[1].value = state.players[1];
+          window.setTimeout(() => ui.playerInputs[0].focus(), 30);
+        }
+
+        ui.setupForm.addEventListener("submit", (event) => {
+          event.preventDefault();
+          state.players = [
+            cleanName(ui.playerInputs[0].value, "Jugador 1"),
+            cleanName(ui.playerInputs[1].value, "Jugador 2")
+          ];
+          startMatch();
+        });
+
+        ui.readyButton.addEventListener("click", () => {
+          setOverlay(ui.handoffOverlay, false);
+          announce(`Turno de ${state.players[state.activePlayer]}`);
+          const firstAvailableCard = [...ui.board.children].find((card) => !card.disabled);
+          if (firstAvailableCard) firstAvailableCard.focus();
+        });
+
+        ui.replayButton.addEventListener("click", startMatch);
+        ui.changePlayersButton.addEventListener("click", returnToSetup);
+        ui.restartButton.addEventListener("click", () => {
+          if (window.confirm("¿Empezar una partida nueva? Se borra el puntaje actual.")) startMatch();
+        });
+      })();
+    </script>
+  </body>
+</html>
