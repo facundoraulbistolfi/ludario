@@ -34,6 +34,21 @@ Juego de memoria con sprites retro de Pac-Man, Space Invaders, Tetris y más. Mo
 ### Pac-Ludo
 Ludo temático de Pac-Man: elegís entre los cuatro fantasmas clásicos, Pac-Man o Ms. Pac-Man, movés sprites direccionales por el tablero, capturás rivales y buscás llegar al centro. Para 2–4 jugadores.
 
+### Memo Duelo
+Duelo de memoria para dos personas en el mismo celular, con turnos automáticos y puntuación por parejas.
+
+### Veintiuno Secreto
+Juego privado de cartas tipo 21 para dos: cada participante pide o se planta sin revelar su mano al rival.
+
+### Código Rival
+Duelo de deducción lógica con claves de colores, ocho intentos y pistas de posición exacta o color desplazado.
+
+### Hegemonía
+Construcción de civilizaciones para dos, con mercado compartido, tres eras y victorias por cultura, guerra o ciencia.
+
+### Nexo
+Juego abstracto de conexión sin azar, con tres tamaños de tablero y regla de intercambio para equilibrar el inicio.
+
 ### Sea of Treasures
 Minijuego de exploración naval inspirado en `sot.jsx`. Navegás una grilla con niebla parcial, administrás casco y víveres, y volvés al puerto con el mayor oro posible.
 
@@ -67,6 +82,11 @@ Portal externo invitado dentro de la home. Abre [Toca Toca](https://facundoraulb
 - `/#/tools/point-counter` → Contador de Puntos
 - `/#/tools/evo-lab` → EvoLab
 - `/#/tools/sot` → Sea of Treasures
+- `/#/tools/memo-duelo` → Memo Duelo
+- `/#/tools/veintiuno-secreto` → Veintiuno Secreto
+- `/#/tools/codigo-rival` → Código Rival
+- `/#/tools/hegemonia` → Hegemonía
+- `/#/tools/nexo` → Nexo
 
 ---
 

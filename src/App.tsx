@@ -13,6 +13,7 @@ const Truco = lazyPage(pageLoaders.truco)
 const PointCounter = lazyPage(pageLoaders.pointCounter)
 const EvoLab = lazyPage(pageLoaders.evoLab)
 const Sot = lazyPage(pageLoaders.sot)
+const StandaloneGame = lazyPage(pageLoaders.standaloneGame)
 
 function RouteFallback() {
   const { pathname } = useLocation()
@@ -57,6 +58,11 @@ export default function App() {
         <Route path="/tools/point-counter" element={<ToolRoute><PointCounter /></ToolRoute>} />
         <Route path="/tools/evo-lab" element={<ToolRoute><EvoLab /></ToolRoute>} />
         <Route path="/tools/sot" element={<ToolRoute><Sot /></ToolRoute>} />
+        <Route path="/tools/memo-duelo" element={<ToolRoute><StandaloneGame /></ToolRoute>} />
+        <Route path="/tools/veintiuno-secreto" element={<ToolRoute><StandaloneGame /></ToolRoute>} />
+        <Route path="/tools/codigo-rival" element={<ToolRoute><StandaloneGame /></ToolRoute>} />
+        <Route path="/tools/hegemonia" element={<ToolRoute><StandaloneGame /></ToolRoute>} />
+        <Route path="/tools/nexo" element={<ToolRoute><StandaloneGame /></ToolRoute>} />
       </Routes>
     </Suspense>
   )

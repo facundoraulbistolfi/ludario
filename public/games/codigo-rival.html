@@ -1,0 +1,1198 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#100d1b" />
+    <meta name="description" content="Código Rival: un duelo de claves secretas para dos personas en el mismo celular." />
+    <title>Código Rival</title>
+    <style>
+      :root {
+        --void: #100d1b;
+        --panel: #1a1629;
+        --panel-2: #242039;
+        --paper: #f4f0e5;
+        --muted: #aaa3bd;
+        --cyan: #39d7ff;
+        --magenta: #ff4da6;
+        --amber: #ffc247;
+        --violet: #9272ff;
+        --mint: #72f1b8;
+        --coral: #ff7163;
+        --line: #4c4566;
+        --safe-top: max(14px, env(safe-area-inset-top));
+        --safe-bottom: max(16px, env(safe-area-inset-bottom));
+      }
+
+      * { box-sizing: border-box; }
+
+      html {
+        min-height: 100%;
+        background: var(--void);
+        -webkit-text-size-adjust: 100%;
+      }
+
+      body {
+        min-width: 300px;
+        min-height: 100svh;
+        margin: 0;
+        overflow-x: hidden;
+        color: var(--paper);
+        background: var(--void);
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      button, input { font: inherit; }
+      button { color: inherit; }
+
+      .app {
+        width: min(100%, 570px);
+        min-height: 100svh;
+        margin: 0 auto;
+        padding: var(--safe-top) 15px var(--safe-bottom);
+      }
+
+      .screen {
+        display: none;
+        min-height: calc(100svh - var(--safe-top) - var(--safe-bottom));
+      }
+
+      .screen.is-active { display: flex; }
+
+      .setup-screen {
+        position: relative;
+        flex-direction: column;
+        justify-content: center;
+        overflow: hidden;
+        padding: 22px 3px;
+      }
+
+      .setup-screen::after {
+        position: absolute;
+        z-index: -1;
+        right: -90px;
+        bottom: 6%;
+        width: 280px;
+        height: 280px;
+        border: 1px solid var(--line);
+        content: "";
+        transform: rotate(19deg);
+      }
+
+      .logo-code {
+        display: flex;
+        gap: 7px;
+        margin-bottom: 25px;
+      }
+
+      .logo-dot {
+        display: grid;
+        width: 32px;
+        height: 32px;
+        place-items: center;
+        border: 1px solid var(--paper);
+        border-radius: 50%;
+        color: var(--void);
+        font-size: 15px;
+        font-weight: 1000;
+      }
+
+      .eyebrow {
+        margin: 0 0 9px;
+        color: var(--cyan);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.17em;
+        text-transform: uppercase;
+      }
+
+      h1, h2, h3, p { margin-top: 0; }
+
+      h1 {
+        max-width: 500px;
+        margin-bottom: 15px;
+        font-family: "Arial Black", Arial, Helvetica, sans-serif;
+        font-size: clamp(50px, 14.5vw, 79px);
+        font-weight: 950;
+        letter-spacing: -0.065em;
+        line-height: 0.86;
+        text-transform: uppercase;
+      }
+
+      h1 span {
+        display: block;
+        color: var(--magenta);
+      }
+
+      .intro {
+        max-width: 450px;
+        margin-bottom: 27px;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.5;
+      }
+
+      .setup-form { width: 100%; }
+
+      .name-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 11px;
+        margin-bottom: 14px;
+      }
+
+      label {
+        display: block;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      input {
+        width: 100%;
+        min-height: 51px;
+        margin-top: 7px;
+        padding: 0 13px;
+        border: 1px solid var(--line);
+        border-radius: 0;
+        outline: 0;
+        color: var(--paper);
+        background: var(--panel);
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      input:focus-visible {
+        border-color: var(--cyan);
+        box-shadow: 4px 4px 0 var(--cyan);
+      }
+
+      .primary-button, .secondary-button {
+        width: 100%;
+        min-height: 56px;
+        border: 2px solid var(--cyan);
+        border-radius: 0;
+        cursor: pointer;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 13px;
+        font-weight: 1000;
+        letter-spacing: 0.035em;
+        text-transform: uppercase;
+      }
+
+      .primary-button {
+        background: var(--cyan);
+        box-shadow: 5px 5px 0 var(--magenta);
+        color: var(--void);
+      }
+
+      .secondary-button {
+        border-color: var(--paper);
+        background: transparent;
+        box-shadow: 4px 4px 0 var(--paper);
+        color: var(--paper);
+      }
+
+      .primary-button:active, .secondary-button:active, .control-button:active {
+        transform: translate(3px, 3px);
+        box-shadow: none;
+      }
+
+      .primary-button:disabled, .control-button:disabled {
+        cursor: default;
+        opacity: 0.35;
+        transform: none;
+        box-shadow: none;
+      }
+
+      .rules {
+        margin-top: 23px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .rules summary {
+        padding: 14px 0;
+        cursor: pointer;
+        color: var(--paper);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-weight: 850;
+      }
+
+      .rules p { margin-bottom: 0; line-height: 1.5; }
+
+      .game-screen {
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .topbar {
+        display: flex;
+        min-height: 41px;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .mini-brand {
+        margin: 0;
+        font-family: "Arial Black", Arial, Helvetica, sans-serif;
+        font-size: 18px;
+        letter-spacing: -0.035em;
+        text-transform: uppercase;
+      }
+
+      .mini-brand span { color: var(--magenta); }
+
+      .text-button {
+        min-height: 38px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      button:focus-visible, input:focus-visible {
+        outline: 3px solid var(--amber);
+        outline-offset: 3px;
+      }
+
+      .role-strip {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        border: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .role-card {
+        min-width: 0;
+        padding: 10px 11px;
+        border-bottom: 4px solid transparent;
+      }
+
+      .role-card + .role-card { border-left: 1px solid var(--line); }
+
+      .role-card.is-active { border-bottom-color: var(--cyan); background: var(--panel-2); }
+      .role-card.is-active:last-child { border-bottom-color: var(--magenta); }
+
+      .role-label {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 8px;
+        font-weight: 900;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .role-name {
+        display: block;
+        overflow: hidden;
+        font-size: 13px;
+        font-weight: 900;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .phase-row {
+        display: flex;
+        min-height: 27px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .phase-copy, .attempt-copy {
+        margin: 0;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 9px;
+        font-weight: 850;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .attempt-copy { color: var(--cyan); }
+
+      .game-panel {
+        display: none;
+        padding: 17px 14px 15px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .game-panel.is-active { display: block; }
+
+      .panel-title {
+        margin-bottom: 7px;
+        font-family: "Arial Black", Arial, Helvetica, sans-serif;
+        font-size: clamp(25px, 8vw, 38px);
+        letter-spacing: -0.045em;
+        line-height: 1;
+        text-transform: uppercase;
+      }
+
+      .panel-copy {
+        margin-bottom: 17px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .code-slots {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 9px;
+        margin: 0 auto 17px;
+      }
+
+      .code-slot {
+        display: grid;
+        aspect-ratio: 1;
+        place-items: center;
+        border: 1px dashed var(--line);
+        background: var(--void);
+      }
+
+      .code-slot.is-filled { border-style: solid; border-color: var(--paper); }
+
+      .token {
+        display: grid;
+        width: 72%;
+        aspect-ratio: 1;
+        place-items: center;
+        border: 2px solid rgba(255, 255, 255, 0.72);
+        border-radius: 50%;
+        color: var(--void);
+        font-size: clamp(18px, 6vw, 28px);
+        font-weight: 1000;
+        line-height: 1;
+      }
+
+      .palette {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 7px;
+        margin-bottom: 15px;
+      }
+
+      .palette-button {
+        display: grid;
+        aspect-ratio: 1;
+        place-items: center;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 0;
+        background: var(--void);
+        cursor: pointer;
+      }
+
+      .palette-button .token { width: 72%; }
+      .palette-button:disabled { cursor: default; opacity: 0.35; }
+
+      .control-grid {
+        display: grid;
+        grid-template-columns: 0.72fr 1.28fr;
+        gap: 9px;
+      }
+
+      .control-button {
+        min-height: 52px;
+        border: 1px solid var(--paper);
+        border-radius: 0;
+        background: transparent;
+        cursor: pointer;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 11px;
+        font-weight: 950;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      .confirm-button {
+        border: 2px solid var(--cyan);
+        background: var(--cyan);
+        box-shadow: 4px 4px 0 var(--magenta);
+        color: var(--void);
+      }
+
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin: -3px 0 14px;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 9px;
+        text-transform: uppercase;
+      }
+
+      .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+
+      .feedback-peg {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border: 1px solid var(--paper);
+        border-radius: 50%;
+      }
+
+      .feedback-peg.exact { border-color: var(--cyan); background: var(--cyan); }
+      .feedback-peg.misplaced { border-color: var(--magenta); background: transparent; }
+
+      .history {
+        display: grid;
+        gap: 7px;
+        max-height: 247px;
+        margin-top: 15px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+
+      .history:empty { display: none; }
+
+      .history-row {
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        gap: 8px;
+        align-items: center;
+        min-height: 48px;
+        padding: 6px 8px;
+        border: 1px solid var(--line);
+        background: var(--void);
+      }
+
+      .history-number {
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 10px;
+        font-weight: 900;
+      }
+
+      .history-code {
+        display: flex;
+        gap: 5px;
+      }
+
+      .history-code .token {
+        width: 30px;
+        height: 30px;
+        font-size: 12px;
+      }
+
+      .history-feedback {
+        display: grid;
+        grid-template-columns: repeat(2, 10px);
+        gap: 3px;
+        min-width: 23px;
+      }
+
+      .history-feedback .feedback-peg { width: 9px; height: 9px; }
+
+      .overlay {
+        position: fixed;
+        z-index: 20;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+      }
+
+      .overlay.is-visible { display: flex; animation: appear 170ms ease-out; }
+
+      .handoff-overlay { background: var(--magenta); color: var(--void); }
+
+      .handoff-card {
+        width: min(100%, 430px);
+        padding: 25px 0 23px;
+        border-top: 7px solid var(--void);
+        border-bottom: 2px solid var(--void);
+      }
+
+      .handoff-symbol {
+        display: grid;
+        width: 62px;
+        height: 62px;
+        place-items: center;
+        margin-bottom: 18px;
+        border: 2px solid var(--void);
+        border-radius: 50%;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 22px;
+        font-weight: 1000;
+      }
+
+      .handoff-card .eyebrow { color: var(--void); }
+
+      .handoff-card h2 {
+        margin-bottom: 12px;
+        font-family: "Arial Black", Arial, Helvetica, sans-serif;
+        font-size: clamp(43px, 12vw, 64px);
+        letter-spacing: -0.06em;
+        line-height: 0.88;
+        text-transform: uppercase;
+      }
+
+      .handoff-card p {
+        margin-bottom: 25px;
+        font-size: 16px;
+        line-height: 1.45;
+      }
+
+      .handoff-card .primary-button {
+        border-color: var(--void);
+        background: var(--void);
+        box-shadow: 5px 5px 0 var(--cyan);
+        color: var(--paper);
+      }
+
+      .result-overlay { overflow-y: auto; background: rgba(16, 13, 27, 0.97); }
+
+      .result-card {
+        width: min(100%, 480px);
+        padding: 24px 18px 20px;
+        border: 2px solid var(--paper);
+        background: var(--panel);
+        box-shadow: 7px 7px 0 var(--cyan);
+        text-align: center;
+      }
+
+      .result-card h2 {
+        margin-bottom: 9px;
+        font-family: "Arial Black", Arial, Helvetica, sans-serif;
+        font-size: clamp(34px, 9vw, 52px);
+        letter-spacing: -0.055em;
+        line-height: 0.94;
+        text-transform: uppercase;
+      }
+
+      .result-copy {
+        margin-bottom: 16px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .secret-reveal {
+        margin-bottom: 18px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        background: var(--void);
+      }
+
+      .secret-reveal-label {
+        margin-bottom: 9px;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .secret-reveal .code-slots {
+        width: min(100%, 270px);
+        margin-bottom: 0;
+      }
+
+      .comparison {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 18px;
+      }
+
+      .comparison-card {
+        min-width: 0;
+        padding: 12px 7px;
+        border: 1px solid var(--line);
+        background: var(--void);
+      }
+
+      .comparison-name {
+        display: block;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 900;
+        text-overflow: ellipsis;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .comparison-score {
+        display: block;
+        margin-top: 5px;
+        color: var(--cyan);
+        font-family: "Arial Black", Arial, Helvetica, sans-serif;
+        font-size: 28px;
+        line-height: 1;
+      }
+
+      .comparison-card:last-child .comparison-score { color: var(--magenta); }
+
+      .button-stack { display: grid; gap: 10px; }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      @keyframes appear {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      @media (max-width: 360px) {
+        .app { padding-right: 10px; padding-left: 10px; }
+        .name-grid { grid-template-columns: 1fr; }
+        .game-panel { padding-right: 10px; padding-left: 10px; }
+        .code-slots { gap: 6px; }
+        .palette { gap: 4px; }
+        .history-row { grid-template-columns: 23px 1fr auto; padding-right: 5px; padding-left: 5px; }
+        .history-code { gap: 3px; }
+        .history-code .token { width: 27px; height: 27px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <section id="setup-screen" class="screen setup-screen is-active" aria-labelledby="game-title">
+        <div class="logo-code" aria-hidden="true">
+          <span class="logo-dot" style="background:#39d7ff">●</span>
+          <span class="logo-dot" style="background:#ff4da6">▲</span>
+          <span class="logo-dot" style="background:#ffc247">■</span>
+          <span class="logo-dot" style="background:#72f1b8">✦</span>
+        </div>
+        <p class="eyebrow">Creá · pasá · descifrá</p>
+        <h1 id="game-title">Código <span>Rival</span></h1>
+        <p class="intro">Cada jugador crea una clave secreta. El rival tiene ocho intentos para romperla usando pistas de posición y color.</p>
+
+        <form id="setup-form" class="setup-form">
+          <div class="name-grid">
+            <label>
+              Jugador 1
+              <input id="player-one-input" maxlength="14" value="Jugador 1" autocomplete="off" />
+            </label>
+            <label>
+              Jugador 2
+              <input id="player-two-input" maxlength="14" value="Jugador 2" autocomplete="off" />
+            </label>
+          </div>
+          <button class="primary-button" type="submit">Iniciar duelo →</button>
+        </form>
+
+        <details class="rules">
+          <summary>¿Cómo funcionan las pistas?</summary>
+          <p>El punto cian indica color correcto en posición correcta. El aro rosa indica color correcto en otra posición. Se pueden repetir colores. Después cambian los roles: gana quien descifre en menos intentos.</p>
+        </details>
+      </section>
+
+      <section id="game-screen" class="screen game-screen" aria-label="Partida de Código Rival">
+        <header class="topbar">
+          <p class="mini-brand">Código <span>Rival</span></p>
+          <button id="restart-button" class="text-button" type="button">Reiniciar duelo</button>
+        </header>
+
+        <section class="role-strip" aria-label="Roles actuales">
+          <div id="maker-card" class="role-card is-active">
+            <span class="role-label">Crea la clave</span>
+            <span id="maker-name" class="role-name">Jugador 1</span>
+          </div>
+          <div id="breaker-card" class="role-card">
+            <span class="role-label">La descifra</span>
+            <span id="breaker-name" class="role-name">Jugador 2</span>
+          </div>
+        </section>
+
+        <div class="phase-row">
+          <p id="phase-copy" class="phase-copy">Parte 1 de 2</p>
+          <p id="attempt-copy" class="attempt-copy">Clave secreta</p>
+        </div>
+
+        <section id="set-panel" class="game-panel is-active" aria-labelledby="set-title">
+          <h2 id="set-title" class="panel-title">Creá una clave</h2>
+          <p class="panel-copy">Elegí cuatro fichas. Podés repetir colores; tu rival no verá esta pantalla.</p>
+          <div id="set-slots" class="code-slots" aria-label="Clave seleccionada"></div>
+          <div id="set-palette" class="palette" aria-label="Colores disponibles"></div>
+          <div class="control-grid">
+            <button id="set-undo-button" class="control-button" type="button">← Borrar</button>
+            <button id="set-confirm-button" class="control-button confirm-button" type="button">Guardar clave</button>
+          </div>
+        </section>
+
+        <section id="guess-panel" class="game-panel" aria-labelledby="guess-title">
+          <h2 id="guess-title" class="panel-title">Descifrá la clave</h2>
+          <p class="panel-copy">Completá cuatro fichas y usá las pistas de los intentos anteriores.</p>
+          <div class="legend" aria-label="Leyenda de pistas">
+            <span class="legend-item"><span class="feedback-peg exact"></span> Exacto</span>
+            <span class="legend-item"><span class="feedback-peg misplaced"></span> Otro lugar</span>
+          </div>
+          <div id="guess-slots" class="code-slots" aria-label="Intento actual"></div>
+          <div id="guess-palette" class="palette" aria-label="Colores disponibles"></div>
+          <div class="control-grid">
+            <button id="guess-undo-button" class="control-button" type="button">← Borrar</button>
+            <button id="guess-submit-button" class="control-button confirm-button" type="button">Probar clave</button>
+          </div>
+          <div id="history" class="history" aria-label="Intentos anteriores"></div>
+        </section>
+      </section>
+    </main>
+
+    <div id="handoff-overlay" class="overlay handoff-overlay" role="dialog" aria-modal="true" aria-labelledby="handoff-title" aria-hidden="true">
+      <div class="handoff-card">
+        <span class="handoff-symbol" aria-hidden="true">••••</span>
+        <p id="handoff-kicker" class="eyebrow">Pantalla cubierta</p>
+        <h2 id="handoff-title">Pasale el celular</h2>
+        <p id="handoff-copy">Ahora juega Jugador 1.</p>
+        <button id="ready-button" class="primary-button" type="button">Soy Jugador 1 · continuar</button>
+      </div>
+    </div>
+
+    <div id="result-overlay" class="overlay result-overlay" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-hidden="true">
+      <div class="result-card">
+        <p id="result-kicker" class="eyebrow">Clave revelada</p>
+        <h2 id="result-title">¡Código descifrado!</h2>
+        <p id="result-copy" class="result-copy">La clave cayó en 4 intentos.</p>
+
+        <div id="secret-reveal" class="secret-reveal">
+          <p class="secret-reveal-label">La clave era</p>
+          <div id="result-secret-slots" class="code-slots"></div>
+        </div>
+
+        <div id="comparison" class="comparison" hidden>
+          <div class="comparison-card">
+            <span id="comparison-name-one" class="comparison-name">Jugador 1</span>
+            <span id="comparison-score-one" class="comparison-score">—</span>
+          </div>
+          <div class="comparison-card">
+            <span id="comparison-name-two" class="comparison-name">Jugador 2</span>
+            <span id="comparison-score-two" class="comparison-score">—</span>
+          </div>
+        </div>
+
+        <div class="button-stack">
+          <button id="result-main-button" class="primary-button" type="button">Cambiar roles</button>
+          <button id="change-players-button" class="secondary-button" type="button">Cambiar jugadores</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="announcer" class="sr-only" aria-live="assertive"></div>
+
+    <script>
+      (() => {
+        "use strict";
+
+        const COLORS = [
+          { id: "cyan", name: "Cian", hex: "#39d7ff", mark: "●" },
+          { id: "magenta", name: "Magenta", hex: "#ff4da6", mark: "▲" },
+          { id: "amber", name: "Ámbar", hex: "#ffc247", mark: "■" },
+          { id: "violet", name: "Violeta", hex: "#9272ff", mark: "◆" },
+          { id: "mint", name: "Menta", hex: "#72f1b8", mark: "✦" },
+          { id: "coral", name: "Coral", hex: "#ff7163", mark: "⬟" }
+        ];
+        const MAX_ATTEMPTS = 8;
+
+        const state = {
+          players: ["Jugador 1", "Jugador 2"],
+          half: 0,
+          maker: 0,
+          breaker: 1,
+          phase: "handoff",
+          readyAction: "set",
+          draft: [],
+          secret: [],
+          guess: [],
+          history: [],
+          results: [null, null],
+          final: false
+        };
+
+        const ui = {
+          setupScreen: document.querySelector("#setup-screen"),
+          gameScreen: document.querySelector("#game-screen"),
+          setupForm: document.querySelector("#setup-form"),
+          playerInputs: [document.querySelector("#player-one-input"), document.querySelector("#player-two-input")],
+          makerCard: document.querySelector("#maker-card"),
+          breakerCard: document.querySelector("#breaker-card"),
+          makerName: document.querySelector("#maker-name"),
+          breakerName: document.querySelector("#breaker-name"),
+          phaseCopy: document.querySelector("#phase-copy"),
+          attemptCopy: document.querySelector("#attempt-copy"),
+          setPanel: document.querySelector("#set-panel"),
+          guessPanel: document.querySelector("#guess-panel"),
+          setSlots: document.querySelector("#set-slots"),
+          guessSlots: document.querySelector("#guess-slots"),
+          setPalette: document.querySelector("#set-palette"),
+          guessPalette: document.querySelector("#guess-palette"),
+          setUndo: document.querySelector("#set-undo-button"),
+          setConfirm: document.querySelector("#set-confirm-button"),
+          guessUndo: document.querySelector("#guess-undo-button"),
+          guessSubmit: document.querySelector("#guess-submit-button"),
+          history: document.querySelector("#history"),
+          restartButton: document.querySelector("#restart-button"),
+          handoffOverlay: document.querySelector("#handoff-overlay"),
+          handoffKicker: document.querySelector("#handoff-kicker"),
+          handoffCopy: document.querySelector("#handoff-copy"),
+          readyButton: document.querySelector("#ready-button"),
+          resultOverlay: document.querySelector("#result-overlay"),
+          resultKicker: document.querySelector("#result-kicker"),
+          resultTitle: document.querySelector("#result-title"),
+          resultCopy: document.querySelector("#result-copy"),
+          resultSecret: document.querySelector("#secret-reveal"),
+          resultSecretSlots: document.querySelector("#result-secret-slots"),
+          comparison: document.querySelector("#comparison"),
+          comparisonNames: [document.querySelector("#comparison-name-one"), document.querySelector("#comparison-name-two")],
+          comparisonScores: [document.querySelector("#comparison-score-one"), document.querySelector("#comparison-score-two")],
+          resultMain: document.querySelector("#result-main-button"),
+          changePlayers: document.querySelector("#change-players-button"),
+          announcer: document.querySelector("#announcer")
+        };
+
+        function cleanName(value, fallback) {
+          return value.trim().replace(/\s+/g, " ") || fallback;
+        }
+
+        function vibrate(pattern) {
+          if (typeof navigator.vibrate === "function") navigator.vibrate(pattern);
+        }
+
+        function announce(message) {
+          ui.announcer.textContent = "";
+          window.setTimeout(() => { ui.announcer.textContent = message; }, 25);
+        }
+
+        function setOverlay(element, visible) {
+          element.classList.toggle("is-visible", visible);
+          element.setAttribute("aria-hidden", String(!visible));
+        }
+
+        function colorById(id) {
+          return COLORS.find((color) => color.id === id);
+        }
+
+        function createToken(id) {
+          const color = colorById(id);
+          const token = document.createElement("span");
+          token.className = "token";
+          token.style.background = color.hex;
+          token.textContent = color.mark;
+          token.setAttribute("aria-label", color.name);
+          return token;
+        }
+
+        function renderSlots(container, values) {
+          container.replaceChildren();
+          for (let index = 0; index < 4; index += 1) {
+            const slot = document.createElement("span");
+            slot.className = `code-slot${values[index] ? " is-filled" : ""}`;
+            if (values[index]) slot.appendChild(createToken(values[index]));
+            else slot.setAttribute("aria-label", `Posición ${index + 1}, vacía`);
+            container.appendChild(slot);
+          }
+        }
+
+        function renderPalette(container, target) {
+          container.replaceChildren();
+          COLORS.forEach((color) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "palette-button";
+            button.setAttribute("aria-label", `Agregar ${color.name}`);
+            button.disabled = target.length >= 4;
+            button.appendChild(createToken(color.id));
+            button.addEventListener("click", () => {
+              if (target.length >= 4) return;
+              target.push(color.id);
+              vibrate(10);
+              render();
+            });
+            container.appendChild(button);
+          });
+        }
+
+        function evaluateGuess(secret, guess) {
+          let exact = 0;
+          const secretRest = [];
+          const guessRest = [];
+
+          for (let index = 0; index < 4; index += 1) {
+            if (secret[index] === guess[index]) exact += 1;
+            else {
+              secretRest.push(secret[index]);
+              guessRest.push(guess[index]);
+            }
+          }
+
+          let misplaced = 0;
+          guessRest.forEach((color) => {
+            const matchIndex = secretRest.indexOf(color);
+            if (matchIndex !== -1) {
+              misplaced += 1;
+              secretRest.splice(matchIndex, 1);
+            }
+          });
+          return { exact, misplaced };
+        }
+
+        function renderHistory() {
+          ui.history.replaceChildren();
+          [...state.history].reverse().forEach((entry) => {
+            const row = document.createElement("div");
+            row.className = "history-row";
+
+            const number = document.createElement("span");
+            number.className = "history-number";
+            number.textContent = `#${entry.attempt}`;
+
+            const code = document.createElement("div");
+            code.className = "history-code";
+            entry.guess.forEach((id) => code.appendChild(createToken(id)));
+
+            const feedback = document.createElement("div");
+            feedback.className = "history-feedback";
+            feedback.setAttribute("aria-label", `${entry.exact} exactos y ${entry.misplaced} en otra posición`);
+            for (let index = 0; index < entry.exact; index += 1) {
+              const peg = document.createElement("span");
+              peg.className = "feedback-peg exact";
+              feedback.appendChild(peg);
+            }
+            for (let index = 0; index < entry.misplaced; index += 1) {
+              const peg = document.createElement("span");
+              peg.className = "feedback-peg misplaced";
+              feedback.appendChild(peg);
+            }
+
+            row.append(number, code, feedback);
+            ui.history.appendChild(row);
+          });
+        }
+
+        function render() {
+          ui.makerName.textContent = state.players[state.maker];
+          ui.breakerName.textContent = state.players[state.breaker];
+          ui.makerCard.classList.toggle("is-active", state.phase === "set");
+          ui.breakerCard.classList.toggle("is-active", state.phase === "guess");
+          ui.phaseCopy.textContent = `Parte ${state.half + 1} de 2`;
+          ui.attemptCopy.textContent = state.phase === "guess"
+            ? `Intento ${Math.min(state.history.length + 1, MAX_ATTEMPTS)} de ${MAX_ATTEMPTS}`
+            : "Clave secreta";
+
+          ui.setPanel.classList.toggle("is-active", state.phase === "set");
+          ui.guessPanel.classList.toggle("is-active", state.phase === "guess");
+          renderSlots(ui.setSlots, state.draft);
+          renderSlots(ui.guessSlots, state.guess);
+          renderPalette(ui.setPalette, state.draft);
+          renderPalette(ui.guessPalette, state.guess);
+          ui.setUndo.disabled = state.draft.length === 0;
+          ui.setConfirm.disabled = state.draft.length !== 4;
+          ui.guessUndo.disabled = state.guess.length === 0;
+          ui.guessSubmit.disabled = state.guess.length !== 4;
+          renderHistory();
+        }
+
+        function showHandoff(kicker, copy, player, action) {
+          state.phase = "handoff";
+          state.readyAction = action;
+          render();
+          ui.handoffKicker.textContent = kicker;
+          ui.handoffCopy.textContent = copy;
+          ui.readyButton.textContent = `Soy ${state.players[player]} · continuar`;
+          setOverlay(ui.handoffOverlay, true);
+          window.setTimeout(() => ui.readyButton.focus(), 25);
+        }
+
+        function startMatch() {
+          state.results = [null, null];
+          state.half = 0;
+          state.final = false;
+          setOverlay(ui.resultOverlay, false);
+          ui.setupScreen.classList.remove("is-active");
+          ui.gameScreen.classList.add("is-active");
+          prepareHalf();
+        }
+
+        function prepareHalf() {
+          state.maker = state.half;
+          state.breaker = state.half === 0 ? 1 : 0;
+          state.draft = [];
+          state.secret = [];
+          state.guess = [];
+          state.history = [];
+          showHandoff(
+            `Parte ${state.half + 1} de 2 · crear`,
+            `${state.players[state.maker]} debe crear una clave sin que ${state.players[state.breaker]} mire.`,
+            state.maker,
+            "set"
+          );
+        }
+
+        function ready() {
+          setOverlay(ui.handoffOverlay, false);
+          state.phase = state.readyAction;
+          render();
+          const player = state.phase === "set" ? state.maker : state.breaker;
+          announce(`Turno privado de ${state.players[player]}.`);
+        }
+
+        function confirmSecret() {
+          if (state.draft.length !== 4) return;
+          state.secret = [...state.draft];
+          state.draft = [];
+          vibrate([18, 35, 18]);
+          showHandoff(
+            `Parte ${state.half + 1} de 2 · descifrar`,
+            `La clave quedó guardada. Pasale el celular a ${state.players[state.breaker]}.`,
+            state.breaker,
+            "guess"
+          );
+        }
+
+        function submitGuess() {
+          if (state.guess.length !== 4) return;
+          const feedback = evaluateGuess(state.secret, state.guess);
+          const attempt = state.history.length + 1;
+          state.history.push({ guess: [...state.guess], attempt, ...feedback });
+          state.guess = [];
+          vibrate(feedback.exact === 4 ? [30, 45, 30] : 18);
+          render();
+          announce(`${feedback.exact} posiciones exactas y ${feedback.misplaced} colores en otro lugar.`);
+
+          if (feedback.exact === 4) {
+            state.results[state.breaker] = attempt;
+            window.setTimeout(() => showHalfResult(true, attempt), 420);
+          } else if (attempt >= MAX_ATTEMPTS) {
+            state.results[state.breaker] = MAX_ATTEMPTS + 1;
+            window.setTimeout(() => showHalfResult(false, attempt), 420);
+          }
+        }
+
+        function attemptLabel(value) {
+          if (value === null) return "—";
+          return value > MAX_ATTEMPTS ? "No pudo" : `${value} intento${value === 1 ? "" : "s"}`;
+        }
+
+        function showHalfResult(solved, attempts) {
+          state.phase = "result";
+          render();
+          ui.resultKicker.textContent = `Parte ${state.half + 1} terminada`;
+          ui.resultTitle.textContent = solved ? "¡Código descifrado!" : "El código resistió";
+          ui.resultCopy.textContent = solved
+            ? `${state.players[state.breaker]} rompió la clave en ${attempts} intento${attempts === 1 ? "" : "s"}.`
+            : `${state.players[state.breaker]} agotó sus ocho intentos.`;
+          ui.resultSecret.hidden = false;
+          renderSlots(ui.resultSecretSlots, state.secret);
+          ui.comparison.hidden = true;
+          ui.resultMain.textContent = state.half === 0 ? "Cambiar roles" : "Ver resultado final";
+          setOverlay(ui.resultOverlay, true);
+          window.setTimeout(() => ui.resultMain.focus(), 25);
+        }
+
+        function showFinalResult() {
+          state.final = true;
+          ui.resultKicker.textContent = "Duelo terminado";
+          const first = state.results[0];
+          const second = state.results[1];
+          let winner = null;
+          if (first < second) winner = 0;
+          else if (second < first) winner = 1;
+
+          ui.resultTitle.textContent = winner === null ? "Empate de cerebros" : `¡Gana ${state.players[winner]}!`;
+          ui.resultCopy.textContent = winner === null
+            ? "Los dos necesitaron la misma cantidad de intentos."
+            : `${state.players[winner]} descifró la clave rival más rápido.`;
+          ui.resultSecret.hidden = true;
+          ui.comparison.hidden = false;
+          ui.comparisonNames.forEach((element, index) => { element.textContent = state.players[index]; });
+          ui.comparisonScores[0].textContent = attemptLabel(first);
+          ui.comparisonScores[1].textContent = attemptLabel(second);
+          ui.resultMain.textContent = "Jugar revancha";
+          announce(ui.resultTitle.textContent);
+        }
+
+        function resultAction() {
+          if (state.final) {
+            startMatch();
+            return;
+          }
+          if (state.half === 0) {
+            setOverlay(ui.resultOverlay, false);
+            state.half = 1;
+            prepareHalf();
+          } else {
+            showFinalResult();
+          }
+        }
+
+        function undo(target) {
+          if (target.length === 0) return;
+          target.pop();
+          vibrate(8);
+          render();
+        }
+
+        function returnToSetup() {
+          setOverlay(ui.handoffOverlay, false);
+          setOverlay(ui.resultOverlay, false);
+          ui.gameScreen.classList.remove("is-active");
+          ui.setupScreen.classList.add("is-active");
+          ui.playerInputs[0].value = state.players[0];
+          ui.playerInputs[1].value = state.players[1];
+          window.setTimeout(() => ui.playerInputs[0].focus(), 25);
+        }
+
+        ui.setupForm.addEventListener("submit", (event) => {
+          event.preventDefault();
+          state.players = [
+            cleanName(ui.playerInputs[0].value, "Jugador 1"),
+            cleanName(ui.playerInputs[1].value, "Jugador 2")
+          ];
+          startMatch();
+        });
+
+        ui.readyButton.addEventListener("click", ready);
+        ui.setUndo.addEventListener("click", () => undo(state.draft));
+        ui.guessUndo.addEventListener("click", () => undo(state.guess));
+        ui.setConfirm.addEventListener("click", confirmSecret);
+        ui.guessSubmit.addEventListener("click", submitGuess);
+        ui.resultMain.addEventListener("click", resultAction);
+        ui.changePlayers.addEventListener("click", returnToSetup);
+        ui.restartButton.addEventListener("click", () => {
+          if (window.confirm("¿Reiniciar el duelo? Se perderá la partida actual.")) startMatch();
+        });
+
+        render();
+      })();
+    </script>
+  </body>
+</html>
