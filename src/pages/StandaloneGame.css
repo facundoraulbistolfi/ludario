@@ -1,0 +1,14 @@
+.standalone-game {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  background: #0f1115;
+}
+
+.standalone-game__frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
