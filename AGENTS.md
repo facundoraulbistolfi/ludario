@@ -102,6 +102,12 @@ npm run test:watch
 - Setup por jugador con seis personajes disponibles: los cuatro fantasmas, Pac-Man y Ms. Pac-Man.
 - Sprites pixelados con orientación a 4 direcciones y ruleta rebalanceada.
 
+### Duelos para un celular
+- Rutas: `/#/tools/memo-duelo`, `/#/tools/veintiuno-secreto`, `/#/tools/codigo-rival`, `/#/tools/hegemonia` y `/#/tools/nexo`.
+- Cinco juegos autónomos para dos personas que se turnan con el mismo dispositivo.
+- Cubren memoria, riesgo con cartas, deducción, construcción de civilizaciones y estrategia abstracta sin azar.
+- Los HTML originales viven en `public/games/` y se muestran desde la page compartida `StandaloneGame`.
+
 ### EvoLab
 - Ruta: `/#/tools/evo-lab`
 - Laboratorio interactivo de algoritmos genéticos / evolutivos.
@@ -163,6 +169,11 @@ La app usa **HashRouter**, por lo que todas las URLs públicas cuelgan de `/#/`.
 | `/#/tools/point-counter` | Contador de Puntos |
 | `/#/tools/evo-lab` | EvoLab |
 | `/#/tools/sot` | Sea of Treasures |
+| `/#/tools/memo-duelo` | Memo Duelo |
+| `/#/tools/veintiuno-secreto` | Veintiuno Secreto |
+| `/#/tools/codigo-rival` | Código Rival |
+| `/#/tools/hegemonia` | Hegemonía |
+| `/#/tools/nexo` | Nexo |
 
 HashRouter evita configuración extra de servidor y funciona bien en GitHub Pages.
 
@@ -181,6 +192,9 @@ HashRouter evita configuración extra de servidor y funciona bien en GitHub Page
   - centraliza loaders;
   - expone `lazyPage`;
   - expone `prefetchRoute(path)`.
+- `src/pages/StandaloneGame.tsx`
+  - monta los cinco juegos HTML autónomos en un iframe compartido;
+  - resuelve el archivo correcto a partir de la ruta activa.
 - `src/components/HomeCornerButton.tsx`
   - retorno compartido a `Home`;
   - botón chico fijo en esquina;
@@ -258,7 +272,13 @@ Importante: ya no es correcto asumir “CSS Modules por tool” como regla unive
 ```text
 ludario/
 ├── public/
-│   └── .nojekyll
+│   ├── .nojekyll
+│   └── games/
+│       ├── memo-duelo.html
+│       ├── veintiuno-secreto.html
+│       ├── codigo-rival.html
+│       ├── hegemonia.html
+│       └── nexo.html
 ├── src/
 │   ├── App.tsx
 │   ├── main.tsx
@@ -277,6 +297,8 @@ ludario/
 │   │   ├── chinchon-tournament.ts
 │   │   └── ...
 │   ├── pages/
+│   │   ├── StandaloneGame.tsx
+│   │   ├── StandaloneGame.css
 │   │   ├── Home.tsx
 │   │   ├── SudokuKiller.tsx
 │   │   ├── Chinchon.tsx
