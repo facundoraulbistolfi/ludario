@@ -1,603 +1,311 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import styles from './PointCounter.module.css'
 
-type PlayerId = string
-
 interface Player {
-  id: PlayerId
+  id: string
   name: string
   color: string
   score: number
 }
 
-interface CounterSettings {
-  quickIncrement: number
-  sliderMin: number
-  sliderMax: number
-  allowNegative: boolean
-  confirmReset: boolean
-}
-
-type ScoreAction =
-  | { type: 'increment'; playerId: PlayerId; amount: number; timestamp: number }
-  | { type: 'decrement'; playerId: PlayerId; amount: number; timestamp: number }
-  | { type: 'set-score'; playerId: PlayerId; previousValue: number; nextValue: number; timestamp: number }
-  | { type: 'reset'; previousScores: Record<PlayerId, number>; timestamp: number }
-
-interface CounterState {
-  players: Player[]
-  settings: CounterSettings
-  history: ScoreAction[]
-  updatedAt: number
-}
-
-const STORAGE_KEY = 'ludario-point-counter-state-v1'
-const LEGACY_STORAGE_KEY = 'tabletop-point-counter-state-v1'
-const LONG_PRESS_MS = 400
-const DEFAULT_COLORS = [
-  '#EF4444', '#F97316', '#F59E0B', '#84CC16', '#22C55E', '#10B981',
-  '#14B8A6', '#06B6D4', '#3B82F6', '#6366F1', '#8B5CF6', '#D946EF',
+const COOKIE_NAME = 'ludario_point_counter_v2'
+const STORAGE_KEYS = ['ludario-point-counter-state-v1', 'tabletop-point-counter-state-v1']
+const MIN_PLAYERS = 2
+const MAX_PLAYERS = 6
+const MAX_NAME_LENGTH = 18
+const PALETTE = ['#d52b77', '#3166e8', '#e86f2c', '#23a36d', '#8c4ed8', '#d19a20']
+const DEFAULT_PLAYERS: Player[] = [
+  { id: 'dai', name: 'Dai', color: PALETTE[0], score: 5 },
+  { id: 'ali', name: 'Ali', color: PALETTE[1], score: 5 },
+  { id: 'facu', name: 'Facu', color: PALETTE[2], score: 5 },
 ]
 
-function makeId() {
-  return crypto.randomUUID()
+function createPlayerId() {
+  if ('randomUUID' in crypto) return crypto.randomUUID()
+  return `player_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
 }
 
-function getTextColor(background: string) {
-  const hex = background.replace('#', '')
-  const parsed = hex.length === 3
-    ? hex.split('').map(ch => ch + ch).join('')
-    : hex
-
-  if (!/^[0-9a-fA-F]{6}$/.test(parsed)) return '#111827'
-
-  const r = Number.parseInt(parsed.slice(0, 2), 16)
-  const g = Number.parseInt(parsed.slice(2, 4), 16)
-  const b = Number.parseInt(parsed.slice(4, 6), 16)
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-  return luminance > 0.62 ? '#111827' : '#F9FAFB'
+function normalizePlayers(value: unknown): Player[] | null {
+  if (!Array.isArray(value)) return null
+  const players = value.slice(0, MAX_PLAYERS).flatMap((raw, index) => {
+    if (!raw || typeof raw !== 'object') return []
+    const candidate = raw as Partial<Player>
+    const score = Number(candidate.score)
+    return [{
+      id: typeof candidate.id === 'string' && candidate.id ? candidate.id : createPlayerId(),
+      name: String(candidate.name ?? '').trim().slice(0, MAX_NAME_LENGTH) || `Jugador ${index + 1}`,
+      color: typeof candidate.color === 'string' && /^#[0-9a-f]{6}$/i.test(candidate.color)
+        ? candidate.color.toLowerCase()
+        : PALETTE[index % PALETTE.length],
+      score: Number.isFinite(score) ? Math.trunc(score) : 0,
+    }]
+  })
+  return players.length >= MIN_PLAYERS ? players : null
 }
 
-function makeDefaultState(): CounterState {
-  return {
-    players: [0, 1].map(index => ({
-      id: makeId(),
-      name: `Jugador ${index + 1}`,
-      color: DEFAULT_COLORS[index],
-      score: 0,
-    })),
-    settings: {
-      quickIncrement: 1,
-      sliderMin: 1,
-      sliderMax: 20,
-      allowNegative: false,
-      confirmReset: true,
-    },
-    history: [],
-    updatedAt: Date.now(),
-  }
-}
-
-function sanitizeState(raw: CounterState): CounterState {
-  const sliderMin = Math.max(1, Math.floor(raw.settings.sliderMin || 1))
-  const sliderMax = Math.max(sliderMin, Math.floor(raw.settings.sliderMax || 20))
-
-  return {
-    players: raw.players.map((player, index) => ({
-      ...player,
-      name: player.name.trim() || `Jugador ${index + 1}`,
-      score: Number.isFinite(player.score) ? player.score : 0,
-      color: player.color || DEFAULT_COLORS[index % DEFAULT_COLORS.length],
-    })),
-    settings: {
-      quickIncrement: Math.max(1, Math.floor(raw.settings.quickIncrement || 1)),
-      sliderMin,
-      sliderMax,
-      allowNegative: Boolean(raw.settings.allowNegative),
-      confirmReset: raw.settings.confirmReset !== false,
-    },
-    history: Array.isArray(raw.history) ? raw.history.slice(-50) : [],
-    updatedAt: Date.now(),
-  }
-}
-
-function loadStoredState(): CounterState {
+function loadPlayers() {
   try {
-    const current = localStorage.getItem(STORAGE_KEY)
-    if (current) return sanitizeState(JSON.parse(current) as CounterState)
-
-    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
-    if (!legacy) return makeDefaultState()
-
-    const migrated = sanitizeState(JSON.parse(legacy) as CounterState)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated))
-    localStorage.removeItem(LEGACY_STORAGE_KEY)
-    return migrated
+    const prefix = `${COOKIE_NAME}=`
+    const cookie = document.cookie.split(';').map(part => part.trim()).find(part => part.startsWith(prefix))
+    if (cookie) {
+      const parsed = JSON.parse(decodeURIComponent(cookie.slice(prefix.length))) as { players?: unknown }
+      const players = normalizePlayers(parsed.players)
+      if (players) return players
+    }
   } catch {
-    return makeDefaultState()
+    // Si la cookie quedó corrupta, se intenta migrar el estado anterior.
   }
+
+  for (const key of STORAGE_KEYS) {
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) continue
+      const parsed = JSON.parse(raw) as { players?: unknown }
+      const players = normalizePlayers(parsed.players)
+      if (players) return players
+    } catch {
+      // Continúa con la siguiente fuente disponible.
+    }
+  }
+  return DEFAULT_PLAYERS.map(player => ({ ...player }))
+}
+
+function persistPlayers(players: Player[]) {
+  const value = encodeURIComponent(JSON.stringify({ players }))
+  const secure = window.location.protocol === 'https:' ? '; Secure' : ''
+  document.cookie = `${COOKIE_NAME}=${value}; Max-Age=31536000; Path=/; SameSite=Lax${secure}`
+  try {
+    STORAGE_KEYS.forEach(key => localStorage.removeItem(key))
+  } catch {
+    // La cookie sigue siendo la fuente principal.
+  }
+}
+
+function shadeColor(hex: string, percent: number) {
+  const number = Number.parseInt(hex.slice(1), 16)
+  const amount = Math.round(2.55 * percent)
+  const clamp = (value: number) => Math.max(0, Math.min(255, value))
+  const channels = [clamp((number >> 16) + amount), clamp(((number >> 8) & 255) + amount), clamp((number & 255) + amount)]
+  return `#${channels.map(value => value.toString(16).padStart(2, '0')).join('')}`
+}
+
+function GearIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-2.83 2.83-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21h-4v-.09a1.65 1.65 0 0 0-1.08-1.5 1.65 1.65 0 0 0-1.82.33l-.06.06-2.83-2.83.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3v-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06 2.83-2.83.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3h4v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06 2.83 2.83-.06.06A1.65 1.65 0 0 0 19.4 9c.12.61.65 1.05 1.27 1.06H21v4h-.09A1.65 1.65 0 0 0 19.4 15Z" />
+    </svg>
+  )
 }
 
 export default function PointCounter() {
-  const [state, setState] = useState<CounterState>(loadStoredState)
+  const [players, setPlayers] = useState<Player[]>(loadPlayers)
+  const [scorePlayerId, setScorePlayerId] = useState<string | null>(null)
+  const [scoreInput, setScoreInput] = useState('')
+  const [customAdd, setCustomAdd] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsDraft, setSettingsDraft] = useState<Player[]>([])
+  const [resetOpen, setResetOpen] = useState(false)
+  const [bumpedPlayerId, setBumpedPlayerId] = useState<string | null>(null)
+  const scoreInputRef = useRef<HTMLInputElement>(null)
+  const firstNameInputRef = useRef<HTMLInputElement>(null)
+  const activePlayer = useMemo(() => players.find(player => player.id === scorePlayerId) ?? null, [players, scorePlayerId])
 
-  const [setupCount, setSetupCount] = useState(state.players.length)
-  const [phase, setPhase] = useState<'setup' | 'game'>(state.players.length >= 2 ? 'game' : 'setup')
-  const [activePlayerId, setActivePlayerId] = useState<PlayerId | null>(null)
-  const [sliderValue, setSliderValue] = useState(1)
-  const [mode, setMode] = useState<'add' | 'subtract'>('add')
-  const [manualScore, setManualScore] = useState('0')
-  const [feedback, setFeedback] = useState<{ playerId: PlayerId; label: string } | null>(null)
-  const [pointerState, setPointerState] = useState<{ playerId: PlayerId; status: 'pressed' | 'pending' } | null>(null)
-  const longPressTimerRef = useRef<number | null>(null)
-  const longPressTriggeredRef = useRef(false)
-  const cancelPressRef = useRef(false)
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, updatedAt: Date.now() }))
-    localStorage.removeItem(LEGACY_STORAGE_KEY)
-  }, [state])
+  useEffect(() => persistPlayers(players), [players])
 
   useEffect(() => {
-    if (!feedback) return
-    const timeout = window.setTimeout(() => setFeedback(null), 800)
-    return () => window.clearTimeout(timeout)
-  }, [feedback])
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [])
 
-  const activePlayer = useMemo(
-    () => state.players.find(player => player.id === activePlayerId) ?? null,
-    [state.players, activePlayerId],
-  )
-
-  const historyAvailable = state.history.length > 0
-
-  function commit(action: ScoreAction, recipe: (players: Player[]) => Player[]) {
-    setState(prev => ({
-      ...prev,
-      players: recipe(prev.players),
-      history: [...prev.history.slice(-49), action],
-      updatedAt: Date.now(),
-    }))
-  }
-
-  function openToolbox(playerId: PlayerId) {
-    setActivePlayerId(playerId)
-    setSliderValue(state.settings.sliderMin)
-    setMode('add')
-    const player = state.players.find(item => item.id === playerId)
-    setManualScore(String(player?.score ?? 0))
-    setPointerState({ playerId, status: 'pending' })
-  }
-
-  function applyQuickIncrement(playerId: PlayerId) {
-    const amount = state.settings.quickIncrement
-    commit({ type: 'increment', playerId, amount, timestamp: Date.now() }, players =>
-      players.map(player =>
-        player.id === playerId
-          ? { ...player, score: player.score + amount }
-          : player,
-      ),
-    )
-    setFeedback({ playerId, label: `+${amount}` })
-  }
-
-  function applyAdvanced() {
+  useEffect(() => {
     if (!activePlayer) return
-    const amount = sliderValue
-    const isSubtract = mode === 'subtract'
-    if (isSubtract && !state.settings.allowNegative) return
+    requestAnimationFrame(() => { scoreInputRef.current?.focus(); scoreInputRef.current?.select() })
+  }, [activePlayer])
 
-    commit(
-      {
-        type: isSubtract ? 'decrement' : 'increment',
-        playerId: activePlayer.id,
-        amount,
-        timestamp: Date.now(),
-      },
-      players => players.map(player => {
-        if (player.id !== activePlayer.id) return player
-        const nextScore = isSubtract ? player.score - amount : player.score + amount
-        return {
-          ...player,
-          score: !state.settings.allowNegative ? Math.max(0, nextScore) : nextScore,
-        }
-      }),
-    )
+  useEffect(() => {
+    if (settingsOpen) requestAnimationFrame(() => firstNameInputRef.current?.focus())
+  }, [settingsOpen])
 
-    setFeedback({ playerId: activePlayer.id, label: `${isSubtract ? '-' : '+'}${amount}` })
-    closeToolbox()
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setScorePlayerId(null)
+      setSettingsOpen(false)
+      setResetOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [])
+
+  function animateScore(playerId: string) {
+    setBumpedPlayerId(null)
+    requestAnimationFrame(() => setBumpedPlayerId(playerId))
+    window.setTimeout(() => setBumpedPlayerId(current => current === playerId ? null : current), 240)
   }
 
-  function applyManualScore() {
-    if (!activePlayer) return
-    const parsed = Number.parseInt(manualScore, 10)
-    if (!Number.isFinite(parsed)) return
-    const nextValue = !state.settings.allowNegative ? Math.max(0, parsed) : parsed
-
-    commit(
-      {
-        type: 'set-score',
-        playerId: activePlayer.id,
-        previousValue: activePlayer.score,
-        nextValue,
-        timestamp: Date.now(),
-      },
-      players => players.map(player => (
-        player.id === activePlayer.id ? { ...player, score: nextValue } : player
-      )),
-    )
-
-    setFeedback({ playerId: activePlayer.id, label: `= ${nextValue}` })
-    closeToolbox()
+  function setScore(playerId: string, score: number) {
+    if (!Number.isFinite(score)) return
+    setPlayers(current => current.map(player => player.id === playerId ? { ...player, score: Math.trunc(score) } : player))
+    animateScore(playerId)
   }
 
-  function closeToolbox() {
-    setActivePlayerId(null)
-    setPointerState(null)
+  function changeScore(playerId: string, delta: number) {
+    setPlayers(current => current.map(player => player.id === playerId ? { ...player, score: player.score + delta } : player))
+    animateScore(playerId)
+    navigator.vibrate?.(18)
   }
 
-  function undoLastAction() {
-    setState(prev => {
-      const last = prev.history[prev.history.length - 1]
-      if (!last) return prev
-      let players = prev.players
+  function openScoreEditor(player: Player) {
+    setScorePlayerId(player.id)
+    setScoreInput(String(player.score))
+    setCustomAdd('')
+  }
 
-      if (last.type === 'increment') {
-        players = prev.players.map(player =>
-          player.id === last.playerId
-            ? { ...player, score: player.score - last.amount }
-            : player,
-        )
-      }
+  function saveExactScore() {
+    if (!activePlayer || scoreInput.trim() === '') return
+    const value = Number(scoreInput)
+    if (!Number.isFinite(value)) return
+    setScore(activePlayer.id, value)
+    setScorePlayerId(null)
+  }
 
-      if (last.type === 'decrement') {
-        players = prev.players.map(player =>
-          player.id === last.playerId
-            ? { ...player, score: player.score + last.amount }
-            : player,
-        )
-      }
+  function addFromEditor(amount: number) {
+    if (!activePlayer || !Number.isFinite(amount) || amount <= 0) return
+    changeScore(activePlayer.id, Math.trunc(amount))
+    setScorePlayerId(null)
+  }
 
-      if (last.type === 'set-score') {
-        players = prev.players.map(player =>
-          player.id === last.playerId
-            ? { ...player, score: last.previousValue }
-            : player,
-        )
-      }
+  function openSettings() {
+    setSettingsDraft(players.map(player => ({ ...player })))
+    setSettingsOpen(true)
+  }
 
-      if (last.type === 'reset') {
-        players = prev.players.map(player => ({
-          ...player,
-          score: last.previousScores[player.id] ?? 0,
-        }))
-      }
+  function updateDraft(playerId: string, patch: Partial<Player>) {
+    setSettingsDraft(current => current.map(player => player.id === playerId ? { ...player, ...patch } : player))
+  }
 
-      return {
-        ...prev,
-        players,
-        history: prev.history.slice(0, -1),
-        updatedAt: Date.now(),
-      }
-    })
+  function addPlayer() {
+    if (settingsDraft.length >= MAX_PLAYERS) return
+    const index = settingsDraft.length
+    setSettingsDraft(current => [...current, {
+      id: createPlayerId(),
+      name: `Jugador ${index + 1}`,
+      color: PALETTE[index % PALETTE.length],
+      score: 0,
+    }])
+  }
+
+  function removePlayer(playerId: string) {
+    if (settingsDraft.length > MIN_PLAYERS) setSettingsDraft(current => current.filter(player => player.id !== playerId))
+  }
+
+  function saveSettings() {
+    const nextPlayers = normalizePlayers(settingsDraft)
+    if (!nextPlayers) return
+    setPlayers(nextPlayers)
+    setSettingsOpen(false)
+  }
+
+  function requestReset() {
+    setSettingsOpen(false)
+    setResetOpen(true)
   }
 
   function resetScores() {
-    if (state.settings.confirmReset) {
-      const accepted = window.confirm('¿Seguro que querés resetear los puntajes?')
-      if (!accepted) return
-    }
-
-    const previousScores = Object.fromEntries(state.players.map(player => [player.id, player.score]))
-    commit(
-      { type: 'reset', previousScores, timestamp: Date.now() },
-      players => players.map(player => ({
-        ...player,
-        score: 0,
-      })),
-    )
-
+    setPlayers(current => current.map(player => ({ ...player, score: 0 })))
+    setResetOpen(false)
   }
 
-  function resetAll() {
-    if (window.confirm('Se reiniciará toda la herramienta. ¿Continuar?')) {
-      const fresh = makeDefaultState()
-      setState(fresh)
-      setSetupCount(fresh.players.length)
-      setPhase('setup')
-      setActivePlayerId(null)
-    }
-  }
-
-  function clearLongPressTimer() {
-    if (longPressTimerRef.current !== null) {
-      window.clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-  }
-
-  function onPlayerPointerDown(playerId: PlayerId) {
-    clearLongPressTimer()
-    longPressTriggeredRef.current = false
-    cancelPressRef.current = false
-    setPointerState({ playerId, status: 'pressed' })
-
-    longPressTimerRef.current = window.setTimeout(() => {
-      if (cancelPressRef.current) return
-      longPressTriggeredRef.current = true
-      openToolbox(playerId)
-    }, LONG_PRESS_MS)
-  }
-
-  function onPlayerPointerUp(playerId: PlayerId) {
-    clearLongPressTimer()
-
-    if (!longPressTriggeredRef.current && !cancelPressRef.current) {
-      applyQuickIncrement(playerId)
-    }
-
-    setTimeout(() => setPointerState(prev => (prev?.playerId === playerId ? null : prev)), 80)
-  }
-
-  function onPlayerPointerLeave() {
-    cancelPressRef.current = true
-    clearLongPressTimer()
-    setPointerState(null)
-  }
-
-  function adjustSetupPlayers(nextCount: number) {
-    const bounded = Math.max(2, Math.min(12, nextCount))
-    setSetupCount(bounded)
-    setState(prev => {
-      let players = [...prev.players]
-      if (bounded > players.length) {
-        for (let i = players.length; i < bounded; i += 1) {
-          players.push({
-            id: makeId(),
-            name: `Jugador ${i + 1}`,
-            color: DEFAULT_COLORS[i % DEFAULT_COLORS.length],
-            score: 0,
-          })
-        }
-      } else {
-        players = players.slice(0, bounded)
-      }
-      return { ...prev, players }
-    })
-  }
-
-  function updatePlayer(playerId: PlayerId, patch: Partial<Player>) {
-    setState(prev => ({
-      ...prev,
-      players: prev.players.map(player => (player.id === playerId ? { ...player, ...patch } : player)),
-    }))
-  }
-
-  function movePlayer(playerId: PlayerId, direction: -1 | 1) {
-    setState(prev => {
-      const index = prev.players.findIndex(player => player.id === playerId)
-      if (index < 0) return prev
-      const nextIndex = index + direction
-      if (nextIndex < 0 || nextIndex >= prev.players.length) return prev
-      const players = [...prev.players]
-      const [item] = players.splice(index, 1)
-      players.splice(nextIndex, 0, item)
-      return { ...prev, players }
-    })
-  }
-
-  function updateSettings(patch: Partial<CounterSettings>) {
-    setState(prev => {
-      const merged = { ...prev.settings, ...patch }
-      const sliderMin = Math.max(1, merged.sliderMin)
-      const sliderMax = Math.max(sliderMin, merged.sliderMax)
-      return {
-        ...prev,
-        settings: {
-          ...merged,
-          sliderMin,
-          sliderMax,
-        },
-      }
-    })
-  }
-
-  function startGame() {
-    setState(prev => ({
-      ...prev,
-      players: prev.players.map((player, index) => ({
-        ...player,
-        name: player.name.trim() || `Jugador ${index + 1}`,
-      })),
-      history: [],
-    }))
-    setPhase('game')
-  }
+  const boardStyle = {
+    '--portrait-rows': players.length,
+    '--landscape-columns': Math.min(players.length, 3),
+    '--landscape-rows': Math.ceil(players.length / Math.min(players.length, 3)),
+  } as CSSProperties
 
   return (
-    <main className="page">
-      <section className={styles.header}>
-        <h1>Contador de Puntos</h1>
-        <p>Tap corto para sumar rápido. Mantené presionado para suma avanzada y edición manual.</p>
+    <main className={styles.app}>
+      <header className={styles.header}>
+        <h1>Contador de puntos</h1>
+        <div className={styles.headerActions}>
+          <p className={styles.hint}>Laterales −1 / +1<br />Centro para editar</p>
+          <button className={styles.settingsButton} type="button" onClick={openSettings} aria-label="Configurar jugadores y colores" title="Configuración"><GearIcon /></button>
+        </div>
+      </header>
+
+      <section className={styles.scoreboard} style={boardStyle} data-count={players.length} aria-label="Puntajes">
+        {players.map(player => (
+          <article className={styles.player} key={player.id} aria-label={`Puntaje de ${player.name}: ${player.score}`} style={{ '--surface': `linear-gradient(135deg, ${player.color} 0%, ${shadeColor(player.color, -28)} 100%)` } as CSSProperties}>
+            <button className={styles.scoreAction} type="button" onClick={() => changeScore(player.id, -1)} aria-label={`Restar un punto a ${player.name}`}><span className={styles.actionMark} aria-hidden="true">−</span></button>
+            <button className={styles.playerContent} type="button" onClick={() => openScoreEditor(player)} aria-label={`Editar puntaje de ${player.name}`}>
+              <span className={styles.playerName}>{player.name}</span>
+              <span className={`${styles.score} ${bumpedPlayerId === player.id ? styles.bump : ''}`} aria-hidden="true">{player.score}</span>
+            </button>
+            <button className={styles.scoreAction} type="button" onClick={() => changeScore(player.id, 1)} aria-label={`Sumar un punto a ${player.name}`}><span className={styles.actionMark} aria-hidden="true">+</span></button>
+          </article>
+        ))}
       </section>
 
-      {phase === 'setup' ? (
-        <section className={styles.setupPanel}>
-          <h2>Setup inicial</h2>
-          <div className={styles.setupControls}>
-            <label>
-              Jugadores (2 a 12)
-              <input
-                type="number"
-                min={2}
-                max={12}
-                value={setupCount}
-                onChange={event => adjustSetupPlayers(Number.parseInt(event.target.value, 10) || 2)}
-              />
-            </label>
-            <label>
-              Incremento rápido
-              <input
-                type="number"
-                min={1}
-                value={state.settings.quickIncrement}
-                onChange={event => updateSettings({ quickIncrement: Number.parseInt(event.target.value, 10) || 1 })}
-              />
-            </label>
-            <label>
-              Slider máximo
-              <input
-                type="number"
-                min={1}
-                value={state.settings.sliderMax}
-                onChange={event => updateSettings({ sliderMax: Number.parseInt(event.target.value, 10) || 20 })}
-              />
-            </label>
-          </div>
-
-          <label className={styles.toggle}>
-            <input
-              type="checkbox"
-              checked={state.settings.allowNegative}
-              onChange={event => updateSettings({ allowNegative: event.target.checked })}
-            />
-            Permitir restar puntos
-          </label>
-
-          <div className={styles.playersSetup}>
-            {state.players.map((player, index) => (
-              <article key={player.id} className={styles.playerSetupRow}>
-                <span className={styles.playerIndex}>{index + 1}</span>
-                <input
-                  type="text"
-                  value={player.name}
-                  maxLength={24}
-                  aria-label={`Nombre del jugador ${index + 1}`}
-                  onChange={event => updatePlayer(player.id, { name: event.target.value })}
-                />
-                <select
-                  value={player.color}
-                  aria-label={`Color de ${player.name || `Jugador ${index + 1}`}`}
-                  onChange={event => updatePlayer(player.id, { color: event.target.value })}
-                >
-                  {DEFAULT_COLORS.map(color => (
-                    <option key={color} value={color}>{color}</option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  value={player.color}
-                  onChange={event => updatePlayer(player.id, { color: event.target.value })}
-                  aria-label={`Color HEX manual para ${player.name || `Jugador ${index + 1}`}`}
-                />
-                <div className={styles.reorderButtons}>
-                  <button type="button" onClick={() => movePlayer(player.id, -1)} aria-label={`Subir ${player.name}`}>↑</button>
-                  <button type="button" onClick={() => movePlayer(player.id, 1)} aria-label={`Bajar ${player.name}`}>↓</button>
-                </div>
-              </article>
-            ))}
-          </div>
-
-          <div className={styles.setupActions}>
-            <button className="cta" type="button" onClick={resetAll}>Reiniciar todo</button>
-            <button className="cta primary" type="button" onClick={startGame}>Iniciar partida</button>
-          </div>
-        </section>
-      ) : (
-        <>
-          <section className={styles.globalActions}>
-            <button className="cta" type="button" onClick={() => setPhase('setup')}>Editar setup</button>
-            <button className="cta" type="button" onClick={undoLastAction} disabled={!historyAvailable}>Deshacer</button>
-            <button className="cta" type="button" onClick={resetScores}>Reset puntajes</button>
-            <button className="cta" type="button" onClick={resetAll}>Reiniciar todo</button>
+      {activePlayer && (
+        <div className={styles.overlay} role="presentation" onPointerDown={event => { if (event.target === event.currentTarget) setScorePlayerId(null) }}>
+          <section className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="score-editor-title">
+            <form className={styles.editor} onSubmit={event => { event.preventDefault(); saveExactScore() }}>
+              <label className={styles.editorLabel} htmlFor="point-counter-score-input">Valor exacto<strong id="score-editor-title">{activePlayer.name}</strong></label>
+              <input ref={scoreInputRef} id="point-counter-score-input" className={styles.scoreInput} type="number" inputMode="numeric" step="1" value={scoreInput} onChange={event => setScoreInput(event.target.value)} />
+              <p className={styles.sectionTitle}>Sumar al puntaje</p>
+              <div className={styles.quickAdds}>{[5, 10, 15].map(amount => <button key={amount} className={styles.quickAdd} type="button" onClick={() => addFromEditor(amount)}>+{amount}</button>)}</div>
+              <div className={styles.customAddRow}>
+                <input className={styles.customAddInput} type="number" inputMode="numeric" min="1" step="1" placeholder="Otra cantidad" aria-label="Cantidad personalizada para sumar" value={customAdd} onChange={event => setCustomAdd(event.target.value)} />
+                <button className={styles.customAddButton} type="button" onClick={() => addFromEditor(Number(customAdd))}>Sumar</button>
+              </div>
+              <div className={styles.dialogActions}>
+                <button className={styles.cancelButton} type="button" onClick={() => setScorePlayerId(null)}>Cancelar</button>
+                <button className={styles.saveButton} type="submit">Guardar valor</button>
+              </div>
+            </form>
           </section>
-
-          <section className={styles.scoreGrid} aria-label="Jugadores">
-            {state.players.map(player => {
-              const active = pointerState?.playerId === player.id
-              const textColor = getTextColor(player.color)
-              const playerFeedback = feedback?.playerId === player.id ? feedback.label : null
-              return (
-                <button
-                  type="button"
-                  key={player.id}
-                  className={`${styles.playerCard} ${active ? styles.playerCardActive : ''}`}
-                  style={{
-                    background: `linear-gradient(145deg, ${player.color}, rgba(0,0,0,0.22))`,
-                    color: textColor,
-                  }}
-                  onPointerDown={() => onPlayerPointerDown(player.id)}
-                  onPointerUp={() => onPlayerPointerUp(player.id)}
-                  onPointerLeave={onPlayerPointerLeave}
-                  onContextMenu={event => event.preventDefault()}
-                  aria-label={`Sumar ${state.settings.quickIncrement} punto a ${player.name}`}
-                >
-                  <span className={styles.playerName}>{player.name}</span>
-                  <span className={styles.playerScore}>{player.score}</span>
-                  {playerFeedback && <span className={styles.floatBadge}>{playerFeedback}</span>}
-                </button>
-              )
-            })}
-          </section>
-        </>
+        </div>
       )}
 
-      {activePlayer && (
-        <div className={styles.overlay} role="dialog" aria-modal="true" aria-label={`Suma avanzada para ${activePlayer.name}`}>
-          <section className={styles.toolbox}>
-            <header>
-              <p className={styles.toolboxName}>{activePlayer.name}</p>
-              <p className={styles.toolboxScore}>Puntaje actual: {activePlayer.score}</p>
-            </header>
-
-            <label className={styles.sliderLabel}>
-              Cantidad: {sliderValue}
-              <input
-                type="range"
-                min={state.settings.sliderMin}
-                max={state.settings.sliderMax}
-                step={1}
-                value={sliderValue}
-                onChange={event => setSliderValue(Number.parseInt(event.target.value, 10))}
-              />
-            </label>
-
-            {state.settings.allowNegative && (
-              <div className={styles.modeSwitch}>
-                <button
-                  type="button"
-                  className={mode === 'add' ? styles.modeActive : ''}
-                  onClick={() => setMode('add')}
-                >
-                  Sumar
-                </button>
-                <button
-                  type="button"
-                  className={mode === 'subtract' ? styles.modeActive : ''}
-                  onClick={() => setMode('subtract')}
-                >
-                  Restar
-                </button>
+      {settingsOpen && (
+        <div className={styles.overlay} role="presentation" onPointerDown={event => { if (event.target === event.currentTarget) setSettingsOpen(false) }}>
+          <section className={`${styles.dialog} ${styles.settingsDialog}`} role="dialog" aria-modal="true" aria-labelledby="settings-title">
+            <form className={styles.settingsPanel} onSubmit={event => { event.preventDefault(); saveSettings() }}>
+              <h2 className={styles.settingsHeading} id="settings-title">Jugadores</h2>
+              <div className={styles.playerSettings}>
+                {settingsDraft.map((player, index) => (
+                  <div className={styles.playerSetting} key={player.id}>
+                    <label className={styles.settingField}>Nombre<input ref={index === 0 ? firstNameInputRef : undefined} className={styles.settingName} type="text" maxLength={MAX_NAME_LENGTH} autoComplete="off" value={player.name} onChange={event => updateDraft(player.id, { name: event.target.value })} /></label>
+                    <label className={styles.settingField}>Color<input className={styles.settingColor} type="color" value={player.color} onChange={event => updateDraft(player.id, { color: event.target.value })} aria-label={`Color de ${player.name || `Jugador ${index + 1}`}`} /></label>
+                    <button className={styles.removePlayer} type="button" disabled={settingsDraft.length <= MIN_PLAYERS} onClick={() => removePlayer(player.id)} aria-label={`Quitar ${player.name || `Jugador ${index + 1}`}`}>×</button>
+                  </div>
+                ))}
               </div>
-            )}
+              <div className={styles.settingsTools}>
+                <button className={styles.addPlayer} type="button" disabled={settingsDraft.length >= MAX_PLAYERS} onClick={addPlayer}>+ Agregar jugador</button>
+                <p>Mínimo 2 · máximo 6</p>
+              </div>
+              <div className={styles.dangerZone}><button className={styles.resetScores} type="button" onClick={requestReset}>Reiniciar todos los puntajes</button></div>
+              <div className={styles.dialogActions}>
+                <button className={styles.cancelButton} type="button" onClick={() => setSettingsOpen(false)}>Cancelar</button>
+                <button className={styles.saveButton} type="submit">Guardar</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
 
-            <div className={styles.toolboxActions}>
-              <button type="button" className="cta primary" onClick={applyAdvanced}>
-                {mode === 'subtract' ? `Restar -${sliderValue}` : `Sumar +${sliderValue}`}
-              </button>
-              <button type="button" className="cta" onClick={closeToolbox}>Cancelar</button>
-            </div>
-
-            <div className={styles.manualEdit}>
-              <label>
-                Puntaje exacto
-                <input
-                  type="number"
-                  value={manualScore}
-                  onChange={event => setManualScore(event.target.value)}
-                />
-              </label>
-              <button type="button" className="cta" onClick={applyManualScore}>Guardar valor</button>
+      {resetOpen && (
+        <div className={styles.overlay} role="presentation" onPointerDown={event => { if (event.target === event.currentTarget) setResetOpen(false) }}>
+          <section className={`${styles.dialog} ${styles.confirmDialog}`} role="alertdialog" aria-modal="true" aria-labelledby="reset-title" aria-describedby="reset-description">
+            <div className={styles.confirmPanel}>
+              <h2 id="reset-title">¿Reiniciar puntajes?</h2>
+              <p id="reset-description">Todos los jugadores volverán a 0. Esta acción no se puede deshacer.</p>
+              <div className={styles.dialogActions}>
+                <button className={styles.cancelButton} type="button" onClick={() => setResetOpen(false)}>Cancelar</button>
+                <button className={`${styles.saveButton} ${styles.confirmReset}`} type="button" onClick={resetScores}>Sí, reiniciar</button>
+              </div>
             </div>
           </section>
         </div>

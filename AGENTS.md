@@ -123,7 +123,7 @@ npm run test:watch
 
 ### Contador de Puntos
 - Ruta: `/#/tools/point-counter`
-- Marcador genérico por jugador con suma rápida, toolbox por long press y persistencia local.
+- Marcador táctil configurable para 2 a 6 jugadores, con zonas laterales −1/+1, editor central, colores, reinicio confirmado y persistencia en cookies.
 
 ### Dosto
 - Portal externo destacado desde `Home`.
