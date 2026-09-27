@@ -116,6 +116,12 @@ npm run test:watch
 - Curvas de fitness (best/avg/worst), inspector de individuo y métricas de diversidad.
 - Usa lógica pura en `src/lib/genetic-lab/` y worker en `src/workers/genetic-lab.worker.ts`.
 
+### Mandelbrot
+- Ruta: `/#/tools/mandelbrot`
+- Explorador de fractales con navegación táctil, paletas, puntos de interés y centros sugeridos.
+- Exporta PNG de alta resolución y GIF con iteraciones progresivas hasta 50.000 en el cuadro final.
+- La app autónoma y sus tres workers viven en `public/mandelbrot/`; `src/pages/Mandelbrot.tsx` la muestra en un iframe. El botón de regreso vive dentro de la app para no tapar el menú ni el visor.
+
 ### Sea of Treasures
 - Ruta: `/#/tools/sot`
 - Minijuego de exploración naval inspirado en `sot.jsx`.
@@ -169,6 +175,7 @@ La app usa **HashRouter**, por lo que todas las URLs públicas cuelgan de `/#/`.
 | `/#/tools/point-counter` | Contador de Puntos |
 | `/#/tools/evo-lab` | EvoLab |
 | `/#/tools/sot` | Sea of Treasures |
+| `/#/tools/mandelbrot` | Mandelbrot |
 | `/#/tools/memo-duelo` | Memo Duelo |
 | `/#/tools/veintiuno-secreto` | Veintiuno Secreto |
 | `/#/tools/codigo-rival` | Código Rival |
@@ -192,6 +199,8 @@ HashRouter evita configuración extra de servidor y funciona bien en GitHub Page
   - centraliza loaders;
   - expone `lazyPage`;
   - expone `prefetchRoute(path)`.
+- `src/pages/Mandelbrot.tsx`
+  - monta el explorador autónomo desde `public/mandelbrot/` a pantalla completa.
 - `src/pages/StandaloneGame.tsx`
   - monta los cinco juegos HTML autónomos en un iframe compartido;
   - resuelve el archivo correcto a partir de la ruta activa.
@@ -273,6 +282,12 @@ Importante: ya no es correcto asumir “CSS Modules por tool” como regla unive
 ludario/
 ├── public/
 │   ├── .nojekyll
+│   ├── mandelbrot/
+│   │   ├── index.html
+│   │   ├── app.js
+│   │   ├── render-worker.js
+│   │   ├── recommend-worker.js
+│   │   └── gif-worker.js
 │   └── games/
 │       ├── memo-duelo.html
 │       ├── veintiuno-secreto.html
@@ -297,6 +312,7 @@ ludario/
 │   │   ├── chinchon-tournament.ts
 │   │   └── ...
 │   ├── pages/
+│   │   ├── Mandelbrot.tsx
 │   │   ├── StandaloneGame.tsx
 │   │   ├── StandaloneGame.css
 │   │   ├── Home.tsx

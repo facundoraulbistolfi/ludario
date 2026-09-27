@@ -28,6 +28,9 @@ Arena de estrategias para Chinchón con bots, simulaciones y replay de manos. Pe
 ### EvoLab
 Laboratorio interactivo de algoritmos genéticos. Configura población, selección (torneo/ruleta), cruce y mutación, y observá cómo una población evoluciona generación a generación para acercarse a un patrón objetivo. Incluye curvas de fitness, inspector de individuo y presets didácticos.
 
+### Mandelbrot
+Explorador móvil del conjunto de Mandelbrot con controles de navegación, puntos guardados y centros sugeridos. Permite personalizar la paleta y generar PNG de alta resolución o GIF con iteraciones progresivas hasta 50.000 en el cuadro final. El código autónomo está en `public/mandelbrot/`.
+
 ### Pac-Memory
 Juego de memoria con sprites retro de Pac-Man, Space Invaders, Tetris y más. Modo multijugador para 2–3 personas, turnos automáticos y animaciones de volteo.
 
@@ -82,6 +85,7 @@ Portal externo invitado dentro de la home. Abre [Toca Toca](https://facundoraulb
 - `/#/tools/point-counter` → Contador de Puntos
 - `/#/tools/evo-lab` → EvoLab
 - `/#/tools/sot` → Sea of Treasures
+- `/#/tools/mandelbrot` → Mandelbrot
 - `/#/tools/memo-duelo` → Memo Duelo
 - `/#/tools/veintiuno-secreto` → Veintiuno Secreto
 - `/#/tools/codigo-rival` → Código Rival
