@@ -13,6 +13,7 @@ export const pageLoaders = {
   pointCounter: () => import('../pages/PointCounter'),
   evoLab: () => import('../pages/EvoLab'),
   sot: () => import('../pages/Sot'),
+  mandelbrot: () => import('../pages/Mandelbrot'),
   standaloneGame: () => import('../pages/StandaloneGame'),
 } satisfies Record<string, PageLoader>
 
@@ -27,6 +28,7 @@ const routePrefetchers: Record<string, PageLoader> = {
   '/tools/point-counter': pageLoaders.pointCounter,
   '/tools/evo-lab': pageLoaders.evoLab,
   '/tools/sot': pageLoaders.sot,
+  '/tools/mandelbrot': pageLoaders.mandelbrot,
   '/tools/memo-duelo': pageLoaders.standaloneGame,
   '/tools/veintiuno-secreto': pageLoaders.standaloneGame,
   '/tools/codigo-rival': pageLoaders.standaloneGame,
