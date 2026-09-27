@@ -37,31 +37,16 @@ function makePalette(colors,inside){
   for(let c=0;c<3;c++)palette[250*3+c]=parseInt(inside.slice(1+c*2,3+c*2),16);
   return palette;
 }
-function makeLookup(palette){
-  const lookup=new Uint8Array(32768);
-  for(let key=0;key<32768;key++){
-    const r=((key>>10)&31)*255/31,g=((key>>5)&31)*255/31,b=(key&31)*255/31;
-    let best=0,distance=Infinity;
-    for(let i=0;i<250;i++){
-      const dr=r-palette[i*3],dg=g-palette[i*3+1],db=b-palette[i*3+2];
-      const score=2*dr*dr+3*dg*dg+db*db;
-      if(score<distance){distance=score;best=i}
-    }
-    lookup[key]=best;
-  }
-  return lookup;
-}
 function iterationsAt(frame,frames,target){
   const first=Math.min(180,target),progress=frame/(frames-1);
   return frame===frames-1?target:Math.round(first+(target-first)*progress**8);
 }
 self.onmessage=({data:task})=>{
   const {width,height,frames,fps,cx,cy,span,maxIter,colors,inside,frequency,phase}=task;
-  if(width<1||height<1||frames<2||frames>240||width*height*frames>30000000||!Number.isInteger(maxIter)||maxIter<80||maxIter>50000)return self.postMessage({error:'La animación supera el límite de tamaño.'});
+  if(width<1||height<1||frames<2||frames>240||width*height*frames>50000000||!Number.isInteger(maxIter)||maxIter<80||maxIter>50000)return self.postMessage({error:'La animación supera el límite de tamaño.'});
   let iterations=0;for(let frame=0;frame<frames;frame++)iterations+=iterationsAt(frame,frames,maxIter);
   if(width*height*maxIter>8000000000||width*height*iterations>50000000000)return self.postMessage({error:'Esta animación requiere demasiado cálculo. Reducí la definición o los cuadros.'});
-  const palette=makePalette(colors,inside),lookup=makeLookup(palette),output=new Bytes();
-  const gradient=colors.map(hex=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)));
+  const palette=makePalette(colors,inside),output=new Bytes();
   output.text('GIF89a');output.word(width);output.word(height);output.byte(0xf7);output.byte(250);output.byte(0);
   for(const value of palette)output.byte(value);
   output.byte(0x21);output.byte(0xff);output.byte(11);output.text('NETSCAPE2.0');output.byte(3);output.byte(1);output.word(0);output.byte(0);
@@ -79,9 +64,7 @@ self.onmessage=({data:task})=>{
         if(n===frameIter){pixels[y*width+x]=250;continue}
         const magnitude=Math.sqrt(zr*zr+zi*zi),smooth=n+1-Math.log2(Math.max(1,Math.log2(magnitude)));
         const colorT=((smooth*frequency/36+5*phase/100)%5+5)%5;
-        const i=Math.floor(colorT),f=colorT-i,a=gradient[i],b=gradient[(i+1)%5];
-        const red=Math.round(a[0]+(b[0]-a[0])*f),green=Math.round(a[1]+(b[1]-a[1])*f),blue=Math.round(a[2]+(b[2]-a[2])*f);
-        pixels[y*width+x]=lookup[(red>>3)<<10|(green>>3)<<5|(blue>>3)];
+        pixels[y*width+x]=Math.round(colorT*50)%250;
       }
     }
     const delay=Math.max(2,Math.round((frame+1)*100/fps)-Math.round(frame*100/fps));
