@@ -20,3 +20,13 @@ El enlace Strava entregado lleva al flyover de la actividad 20553887856 y rediri
 ## Validación pendiente
 
 No hubo comprobación física en el predio ni medición GNSS de los seis recorridos. Para corregir el croquis hacen falta tracks identificados por color y/o hitos inequívocos confirmados por el parque. Un recorrido GPS tampoco demuestra autorización de paso ni precisión absoluta.
+
+## Actualización con GPS públicos y preferencia del usuario
+
+Después de hacerse públicas, las vistas `/activities/20553887856/flyover` y `/activities/20556370640/flyover` expusieron sus coordenadas en `flyoverData.streams.location`. Se incorporaron únicamente coordenadas regionales y nombres descriptivos (sin perfil, horarios, velocidades ni datos de salud). Ambas quedan incluidas offline, con fuente individual y exportación GPX.
+
+El usuario pidió explícitamente conservar visibles los seis senderos imperfectos. Se restauró ese comportamiento, con los lugares y miradores visibles, y se migraron las preferencias a v3 para que la configuración anterior no los mantenga ocultos.
+
+El tramo norte del amarillo al pie de la sierra se ajustó al registro 20553887856, puntos originales 1039 → 130. La identificación como ese tramo es una inferencia por el recorrido al pie de la sierra y su relación con Totanka, no una confirmación del color de la señalización. Los enlaces cortos con el croquis y la continuación desde su vértice 10 siguen siendo aproximaciones. Se conservó la geometría anterior en `originalCoordinatesParts`; los otros cinco senderos no se desplazaron.
+
+El recorrido 20556370640 fue identificado explícitamente por el usuario como estacionamiento → Paredes Naranjas. Su llegada reemplaza la referencia anterior de ese sector (preservada en `previousCoordinates`) y su geometría reemplaza la aproximación de acceso correspondiente en la guía. No se considera una medición de cada pie de vía ni una validación de todos los senderos.

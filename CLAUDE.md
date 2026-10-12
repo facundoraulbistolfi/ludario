@@ -124,7 +124,7 @@ npm run test:watch
 ### Sierra de los Difuntos
 - Ruta de catálogo: `/#/tools/difuntos`; abre la subpágina autónoma `/ludario/difuntos/`.
 - Mapa 3D móvil con relieve real, seis senderos, trece sectores, 336 vías y 64 fotos.
-- Importación/exportación GPX local y offline; capa OSM con fuentes. Croquis con desajustes oculto inicialmente y discontinuo al activarlo.
+- Importación/exportación GPX local y offline; capa OSM con fuentes. Seis senderos y lugares visibles; ajuste parcial con dos recorridos GPS públicos de Strava incluidos offline.
 - GPS y descarga verificada/reanudable sin conexión; service worker limitado a esta subpágina y cachés `ludario-difuntos-*`.
 - El acceso desde React redirige al documento autónomo para que PWA, GPS y reapertura offline usen su propia URL.
 - Fuente y generador en `scripts/difuntos/`; recursos optimizados en `public/difuntos/`.

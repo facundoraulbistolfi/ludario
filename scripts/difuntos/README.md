@@ -18,3 +18,5 @@ Las coordenadas GPS se usan solo en el navegador. La caché usa el prefijo `luda
 `tracks.js` importa GPX (tracks y routes), recorta a la zona, preserva segmentos y separa saltos >250 m. Los recorridos se guardan solo en este navegador y pueden exportarse como GPX o dentro de la copia HTML offline. `tracks.test.js` cubre límites, discontinuidades y exportación. No hay sincronización automática con Strava.
 
 Dos sendas OSM con fuente individual complementan la cartografía. El croquis con desajustes está oculto inicialmente y usa trazos discontinuos. Ver `GEOGRAPHY.md` para resultados, método y límites de la revisión.
+
+Actualización: por pedido del usuario, los seis senderos y lugares vuelven a estar visibles por defecto (preferencias v3). Dos recorridos públicos de Strava quedan incluidos offline, permiten ocultarse por separado y exportarse como GPX. Se usaron para ajustar el tramo norte del amarillo y la llegada/acceso a Paredes Naranjas; el resto del croquis se conserva. Estas rutas compartidas forman parte del mapa publicado; los GPX importados por cada visitante siguen siendo locales.
