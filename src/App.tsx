@@ -13,6 +13,7 @@ const Truco = lazyPage(pageLoaders.truco)
 const PointCounter = lazyPage(pageLoaders.pointCounter)
 const EvoLab = lazyPage(pageLoaders.evoLab)
 const Sot = lazyPage(pageLoaders.sot)
+const Difuntos = lazyPage(pageLoaders.difuntos)
 const Mandelbrot = lazyPage(pageLoaders.mandelbrot)
 const StandaloneGame = lazyPage(pageLoaders.standaloneGame)
 
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="/tools/point-counter" element={<ToolRoute><PointCounter /></ToolRoute>} />
         <Route path="/tools/evo-lab" element={<ToolRoute><EvoLab /></ToolRoute>} />
         <Route path="/tools/sot" element={<ToolRoute><Sot /></ToolRoute>} />
+        <Route path="/tools/difuntos" element={<Difuntos />} />
         <Route path="/tools/mandelbrot" element={<Mandelbrot />} />
         <Route path="/tools/memo-duelo" element={<ToolRoute><StandaloneGame /></ToolRoute>} />
         <Route path="/tools/veintiuno-secreto" element={<ToolRoute><StandaloneGame /></ToolRoute>} />

@@ -67,6 +67,21 @@ export type FilterMeta = {
 
 export const CATALOG_ITEMS: CatalogItem[] = [
   {
+    id: '/tools/difuntos',
+    kind: 'internal',
+    to: '/tools/difuntos',
+    icon: '⛰️',
+    tags: ['Herramienta'],
+    chips: ['Mapa 3D', 'Escalada', 'Senderos', 'GPS', 'Sin conexión'],
+    title: 'Sierra de los Difuntos',
+    subtitle: 'Explorá el relieve, los senderos y las vías, incluso sin señal.',
+    description: 'Atlas móvil con elevaciones reales, seis senderos, trece sectores, 336 vías y fotos de referencia. Guardado completo sin conexión y ubicación GPS.',
+    collection: 'study',
+    coverStyle: 'plate',
+    accent: '#76925e',
+    shelfLabel: 'Sierra',
+  },
+  {
     id: '/tools/sudoku-killer',
     kind: 'internal',
     to: '/tools/sudoku-killer',

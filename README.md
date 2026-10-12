@@ -28,6 +28,11 @@ Arena de estrategias para Chinchón con bots, simulaciones y replay de manos. Pe
 ### EvoLab
 Laboratorio interactivo de algoritmos genéticos. Configura población, selección (torneo/ruleta), cruce y mutación, y observá cómo una población evoluciona generación a generación para acercarse a un patrón objetivo. Incluye curvas de fitness, inspector de individuo y presets didácticos.
 
+### Sierra de los Difuntos
+Mapa 3D para el celular con elevaciones reales, senderos, trece sectores de escalada y 336 vías. Incluye 64 fotos de referencia, GPS y descarga completa verificada de unos 10 MB para usar sin conexión. Está en [la subpágina Difuntos](https://facundoraulbistolfi.github.io/ludario/difuntos/), y aparece en el catálogo de Ludario. Los trazados derivados de croquis son aproximados.
+
+En Safari: abrir la subpágina, tocar **Sin conexión → Guardar todo**, esperar la confirmación y agregarla a la pantalla de inicio. El worker solo controla `/ludario/difuntos/`.
+
 ### Mandelbrot
 Explorador móvil del conjunto de Mandelbrot con controles de navegación, puntos guardados y centros sugeridos. Permite personalizar la paleta y generar PNG de alta resolución o GIF con iteraciones progresivas hasta 50.000 en el cuadro final. El código autónomo está en `public/mandelbrot/`.
 
@@ -86,6 +91,7 @@ Portal externo invitado dentro de la home. Abre [Toca Toca](https://facundoraulb
 - `/#/tools/evo-lab` → EvoLab
 - `/#/tools/sot` → Sea of Treasures
 - `/#/tools/mandelbrot` → Mandelbrot
+- `/#/tools/difuntos` → Sierra de los Difuntos (abre `/ludario/difuntos/`)
 - `/#/tools/memo-duelo` → Memo Duelo
 - `/#/tools/veintiuno-secreto` → Veintiuno Secreto
 - `/#/tools/codigo-rival` → Código Rival

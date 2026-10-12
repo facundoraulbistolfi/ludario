@@ -8,10 +8,11 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run build:difuntos && tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "npm run build:difuntos && vitest run && node scripts/difuntos/check-render.cjs && node scripts/difuntos/check-offline.cjs",
+    "test:watch": "vitest",
+    "build:difuntos": "node scripts/difuntos/build.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

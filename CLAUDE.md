@@ -121,6 +121,14 @@ npm run test:watch
 - Exporta PNG de alta resolución y GIF con iteraciones progresivas hasta 50.000 en el cuadro final.
 - La app autónoma y sus tres workers viven en `public/mandelbrot/`; `src/pages/Mandelbrot.tsx` la muestra en un iframe. El botón de regreso vive dentro de la app para no tapar el menú ni el visor.
 
+### Sierra de los Difuntos
+- Ruta de catálogo: `/#/tools/difuntos`; abre la subpágina autónoma `/ludario/difuntos/`.
+- Mapa 3D móvil con relieve real, seis senderos, trece sectores, 336 vías y 64 fotos.
+- GPS y descarga verificada/reanudable sin conexión; service worker limitado a esta subpágina y cachés `ludario-difuntos-*`.
+- El acceso desde React redirige al documento autónomo para que PWA, GPS y reapertura offline usen su propia URL.
+- Fuente y generador en `scripts/difuntos/`; recursos optimizados en `public/difuntos/`.
+- `npm run build:difuntos` regenera HTML, motor, manifiesto offline y service worker; también se ejecuta dentro de `npm run build`.
+
 ### Sea of Treasures
 - Ruta: `/#/tools/sot`
 - Minijuego de exploración naval inspirado en `sot.jsx`.
@@ -159,7 +167,7 @@ npm run test:watch
 
 ## Rutas
 
-La app usa **HashRouter**, por lo que todas las URLs públicas cuelgan de `/#/`.
+El catálogo usa **HashRouter** y sus rutas cuelgan de `/#/`. Las apps autónomas pueden abrir una subpágina propia: Difuntos vive en `/ludario/difuntos/` para conservar su scope offline.
 
 | Ruta | Pantalla |
 |---|---|
@@ -175,6 +183,7 @@ La app usa **HashRouter**, por lo que todas las URLs públicas cuelgan de `/#/`.
 | `/#/tools/evo-lab` | EvoLab |
 | `/#/tools/sot` | Sea of Treasures |
 | `/#/tools/mandelbrot` | Mandelbrot |
+| `/#/tools/difuntos` | Sierra de los Difuntos (subpágina autónoma) |
 | `/#/tools/memo-duelo` | Memo Duelo |
 | `/#/tools/veintiuno-secreto` | Veintiuno Secreto |
 | `/#/tools/codigo-rival` | Código Rival |
@@ -200,6 +209,8 @@ HashRouter evita configuración extra de servidor y funciona bien en GitHub Page
   - expone `prefetchRoute(path)`.
 - `src/pages/Mandelbrot.tsx`
   - monta el explorador autónomo desde `public/mandelbrot/` a pantalla completa.
+- `src/pages/Difuntos.tsx`
+  - redirige al atlas autónomo `public/difuntos/` para abrir GPS y caché sin conexión desde su propia URL.
 - `src/pages/StandaloneGame.tsx`
   - monta los cinco juegos HTML autónomos en un iframe compartido;
   - resuelve el archivo correcto a partir de la ruta activa.
