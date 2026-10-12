@@ -12,3 +12,9 @@ App autónoma publicada desde `public/difuntos/`. Se abre desde el catálogo med
 El listado usa la guía oficial de Sierra de los Difuntos de junio de 2026. Las fotos, el croquis y los sectores son del sitio oficial https://www.sierradelosdifuntos.com/. Relieve: Mapzen/AWS Terrain Tiles, NASA/USGS SRTM. Imagen satelital: Esri World Imagery y proveedores indicados en la app. Los croquis georreferenciados son aproximados y no reemplazan tracks medidos ni señalización del lugar.
 
 Las coordenadas GPS se usan solo en el navegador. La caché usa el prefijo `ludario-difuntos-` y no controla ni elimina archivos de otras páginas de Ludario o del dominio.
+
+## Recorridos personales y revisión geográfica
+
+`tracks.js` importa GPX (tracks y routes), recorta a la zona, preserva segmentos y separa saltos >250 m. Los recorridos se guardan solo en este navegador y pueden exportarse como GPX o dentro de la copia HTML offline. `tracks.test.js` cubre límites, discontinuidades y exportación. No hay sincronización automática con Strava.
+
+Dos sendas OSM con fuente individual complementan la cartografía. El croquis con desajustes está oculto inicialmente y usa trazos discontinuos. Ver `GEOGRAPHY.md` para resultados, método y límites de la revisión.
