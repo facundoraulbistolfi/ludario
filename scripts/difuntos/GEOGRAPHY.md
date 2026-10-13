@@ -1,32 +1,34 @@
-# Revisión geográfica · 12 de octubre de 2026
+# Revisión geográfica · 13/10/2026
 
-El terreno y la textura satelital tienen coordenadas geográficas; eso no valida los senderos digitalizados del croquis. La transformación del croquis usa tres controles: Totanka, Naranjas y una posición supuesta del bosque cercano a Paredes Rojas. El ajuste exacto en esos tres controles no mide el error fuera de ellos. El residuo de 40,9 m de la guía de escalada pertenece a otro ajuste y tampoco valida los senderos.
+## Plano de escalada
 
-Se compararon los seis trazados con Esri World Imagery y la cartografía OSM obtenida mediante `https://api.openstreetmap.org/api/0.6/map?bbox=-57.87,-37.911,-57.837,-37.883`.
+La figura satelital de la página 4 de la guía oficial de junio de 2026 se registró contra la textura Esri incluida. SIFT produjo 96 coincidencias; RANSAC conservó 88. Error RMS de registro: 1,02 píxeles en la textura. Las coincidencias cubren aproximadamente x=390–961, y=780–1462 del plano. Los estacionamientos e ingreso del norte quedan fuera de esa cobertura; su transformación extrapola y tiene más incertidumbre.
 
-- Rojo y naranja: sectores sobre cultivos; el naranja no sigue consistentemente el filo descrito en https://www.sierradelosdifuntos.com/senderos. No es posible corregirlos con un desplazamiento uniforme.
-- Amarillo: relación general con el pie de sierra, sin coincidencia suficiente para confirmar todo el recorrido.
-- Verde, celeste y azul: sin una referencia independiente que confirme su geometría completa.
-- OSM contiene dos sendas sin nombre/color, ways 370514761 y 370515082, del lado este de la zona. Son referencias independientes y parciales, no reemplazos de los seis senderos oficiales. La imagen satelital no permite confirmar todos sus metros, especialmente entre vegetación y rocas.
+La homografía y dimensiones de ambas imágenes están en `guide.registration`. La conversión utiliza longitud lineal y latitud Web Mercator, igual que la textura del motor. `register-guide.py` permite reproducir el ajuste con OpenCV y numpy. No se requieren esas dependencias para compilar o usar la app.
 
-## Cambios
+Se reemplazó el ajuste afín anterior por esta transformación para los símbolos de sectores y accesos de la guía. El ingreso mantiene la coordenada oficial previa. Los cuatro puntos de catálogo theCrag se conservan como referencias alternativas, no controles del nuevo ajuste; pueden representar lugares diferentes dentro de un sector. Los desplazamientos de símbolos frente a la versión anterior son aproximadamente 29–140 m.
 
-Los trazos del croquis y sus lugares se ocultan inicialmente (preferencias v2) y se dibujan discontinuos al activarlos. La geometría original se preserva identificada como no validada; no se desplazan puntos para simular una precisión inexistente. Se agregan las dos sendas OSM como capa independiente, con créditos y enlaces a cada way. El mapa oficial original permanece accesible sin conexión.
+El residuo mide coincidencia entre imágenes, **no precisión absoluta de sectores o senderos**. Los símbolos tienen extensión, la digitalización de líneas es manual, el relieve no resuelve paredes individuales y la imagen puede tener errores. No se hizo verificación en terreno.
 
-GPX locales conservan coordenadas, separan segmentos originales, saltos >250 m y salidas del área. No se ajustan al croquis ni se asigna un color oficial automáticamente. Solo se guardan nombre y coordenadas regionales, sin tiempos, salud ni identidad. La importación funciona offline; los datos se conservan en localStorage, no en GitHub. La exportación GPX permite respaldo y la copia HTML incluye los recorridos locales.
+## Accesos por sector
 
-El enlace Strava entregado lleva al flyover de la actividad 20553887856 y redirigió a registro sin sesión. No se obtuvo ni se incorporó una geometría de esa actividad. Para incorporarla hace falta el GPX exportado por el usuario desde Strava.
+Los cinco símbolos E del plano son puntos de partida aproximados. Cada uno de los 13 sectores tiene una ficha de acceso, descripción y enlace al plano original. Se distinguen:
 
-## Validación pendiente
+- `parts`: líneas digitalizadas del plano oficial, georreferenciadas al satélite.
+- `orientationParts`: enlaces de orientación donde el plano no dibuja una senda continua; pueden unir estacionamientos y símbolos, sin afirmar que exista una senda recta.
 
-No hubo comprobación física en el predio ni medición GNSS de los seis recorridos. Para corregir el croquis hacen falta tracks identificados por color y/o hitos inequívocos confirmados por el parque. Un recorrido GPS tampoco demuestra autorización de paso ni precisión absoluta.
+Ambos se dibujan discontinuos por ser aproximados; los enlaces de orientación son más finos y anaranjados. Solo se destacan los del sector seleccionado. Para Tanqueta no existe una traza final publicada: la app lo dice y muestra únicamente orientación. Los sectores del sur tampoco disponen de geometría publicada para cada tramo final. No se calculan tiempos ni navegación giro a giro. Las instrucciones de Potolandia, Bosque, Escaloneta, Gemelos, Naranjas y Totanka provienen del texto de la guía; las restantes relaciones espaciales se atribuyen expresamente al plano.
 
-## Actualización con GPS públicos y preferencia del usuario
+## OSM y senderos de colores
 
-Después de hacerse públicas, las vistas `/activities/20553887856/flyover` y `/activities/20556370640/flyover` expusieron sus coordenadas en `flyoverData.streams.location`. Se incorporaron únicamente coordenadas regionales y nombres descriptivos (sin perfil, horarios, velocidades ni datos de salud). Ambas quedan incluidas offline, con fuente individual y exportación GPX.
+Consulta OSM: `https://api.openstreetmap.org/api/0.6/map?bbox=-57.870,-37.911,-57.837,-37.883`, 13/10/2026. Se actualizan las sendas 370514761 y 370515082, al este. Los caminos privados de servicio de esa consulta corresponden a otra área y no se incorporan como accesos de escalada. OSM no cubre la red completa de este predio: no se ajustan los senderos a sendas lejanas ni se asignan colores sin evidencia.
 
-El usuario pidió explícitamente conservar visibles los seis senderos imperfectos. Se restauró ese comportamiento, con los lugares y miradores visibles, y se migraron las preferencias a v3 para que la configuración anterior no los mantenga ocultos.
+Los seis recorridos del croquis se conservan visibles como referencias discontinuas. Se restauró el amarillo original para eliminar la geometría derivada de caminatas personales. El croquis sigue usando tres controles, uno supuesto: especialmente Rojo y Naranja presentan desajustes. La nueva transformación del plano de escalada **no valida** ese croquis separado. Sus puntos de interés también son aproximados; el baño del Bosque de Paredes Rojas se identifica como referencia de zona y no posición exacta.
 
-El tramo norte del amarillo al pie de la sierra se ajustó al registro 20553887856, puntos originales 1039 → 130. La identificación como ese tramo es una inferencia por el recorrido al pie de la sierra y su relación con Totanka, no una confirmación del color de la señalización. Los enlaces cortos con el croquis y la continuación desde su vértice 10 siguen siendo aproximaciones. Se conservó la geometría anterior en `originalCoordinatesParts`; los otros cinco senderos no se desplazaron.
+## Privacidad y offline
 
-El recorrido 20556370640 fue identificado explícitamente por el usuario como estacionamiento → Paredes Naranjas. Su llegada reemplaza la referencia anterior de ese sector (preservada en `previousCoordinates`) y su geometría reemplaza la aproximación de acceso correspondiente en la guía. No se considera una medición de cada pie de vía ni una validación de todos los senderos.
+No se publican actividades, geometrías personales, enlaces Strava ni controles para importar recorridos. Los registros de versiones anteriores del navegador no se leen ni exportan; no se borran respaldos locales del visitante. El GPS muestra solo posición actual y precisión, sin historial ni envío.
+
+La guía incluye 336 vías y 64 fotos. GPS requiere permiso y contexto HTTPS; la app instalada puede abrir su caché sin datos móviles. El archivo HTML descargable incluye mapa, guía y fotos, pero GPS puede bloquearse en archivos locales. El service worker verifica recursos, admite descargas interrumpidas y limita su caché a esta subpágina.
+
+Validación automatizada: catálogo/fotos completos, ausencia de actividades publicadas, referencias de estacionamientos para los 13 sectores, transformación y límites; integridad offline, modo avión simulado, reanudación, actualizaciones y cachés ajenas. Browser QA no disponible en este entorno; no se realizó prueba física de GPS.

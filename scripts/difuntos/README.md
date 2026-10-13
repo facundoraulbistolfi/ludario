@@ -13,10 +13,10 @@ El listado usa la guía oficial de Sierra de los Difuntos de junio de 2026. Las 
 
 Las coordenadas GPS se usan solo en el navegador. La caché usa el prefijo `ludario-difuntos-` y no controla ni elimina archivos de otras páginas de Ludario o del dominio.
 
-## Recorridos personales y revisión geográfica
+## Sectores y accesos
 
-`tracks.js` importa GPX (tracks y routes), recorta a la zona, preserva segmentos y separa saltos >250 m. Los recorridos se guardan solo en este navegador y pueden exportarse como GPX o dentro de la copia HTML offline. `tracks.test.js` cubre límites, discontinuidades y exportación. No hay sincronización automática con Strava.
+La búsqueda encuentra sectores, nombres de vías y puntos de interés. Cada sector tiene listado, fotos y acceso desde un estacionamiento del plano oficial. Los detalles y datos de visita se despliegan a pedido. No se publican caminatas personales ni se importan recorridos; GPS muestra únicamente posición actual y precisión.
 
-Dos sendas OSM con fuente individual complementan la cartografía. El croquis con desajustes está oculto inicialmente y usa trazos discontinuos. Ver `GEOGRAPHY.md` para resultados, método y límites de la revisión.
+El plano de escalada está georreferenciado a la textura satelital con 88 coincidencias visuales. Los símbolos y accesos siguen siendo aproximados. Cada aproximación separa trazas dibujadas en la guía de enlaces de orientación para tramos sin geometría publicada. Dos sendas OSM independientes y los seis senderos del croquis complementan el mapa, con fuentes y límites explícitos. Ver `GEOGRAPHY.md` para método y validación.
 
-Actualización: por pedido del usuario, los seis senderos y lugares vuelven a estar visibles por defecto (preferencias v3). Dos recorridos públicos de Strava quedan incluidos offline, permiten ocultarse por separado y exportarse como GPX. Se usaron para ajustar el tramo norte del amarillo y la llegada/acceso a Paredes Naranjas; el resto del croquis se conserva. Estas rutas compartidas forman parte del mapa publicado; los GPX importados por cada visitante siguen siendo locales.
+`register-guide.py` reproduce el registro de imágenes (OpenCV/numpy opcionales para mantenimiento). Las pruebas geográficas validan que los 13 sectores tengan guía, fotos y aproximación sin publicar actividades. `tracks.js` conserva utilidades geográficas y de formato independientes; la interfaz ya no lo utiliza para importar ni guardar registros.
