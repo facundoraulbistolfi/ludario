@@ -29,7 +29,7 @@ Arena de estrategias para Chinchón con bots, simulaciones y replay de manos. Pe
 Laboratorio interactivo de algoritmos genéticos. Configura población, selección (torneo/ruleta), cruce y mutación, y observá cómo una población evoluciona generación a generación para acercarse a un patrón objetivo. Incluye curvas de fitness, inspector de individuo y presets didácticos.
 
 ### Sierra de los Difuntos
-Mapa 3D para el celular con trece sectores, 336 vías, 64 fotos y puntos de interés. Incluye búsqueda, accesos por estacionamiento, GPS y descarga completa verificada de unos 11 MB. El plano oficial se alinea con el satélite; los accesos y senderos del croquis son aproximados, con OSM como referencia parcial. Sin recorridos personales. Está en [la subpágina Difuntos](https://facundoraulbistolfi.github.io/ludario/difuntos/).
+Mapa 3D para el celular con trece sectores, 336 vías, 64 fotos y puntos de interés. Incluye búsqueda, accesos por estacionamiento, GPS y descarga completa verificada de unos 11 MB. El plano oficial se alinea con el satélite; caminos y accesos incorporan correcciones parciales con GPS y OSM. Los tramos sin registro siguen siendo aproximados; sin capas de caminatas personales. Está en [la subpágina Difuntos](https://facundoraulbistolfi.github.io/ludario/difuntos/).
 
 En Safari: abrir la subpágina, tocar **Sin conexión → Guardar todo**, esperar la confirmación y agregarla a la pantalla de inicio. El worker solo controla `/ludario/difuntos/`.
 
